@@ -1,0 +1,4 @@
+# Size budget for the firmware_portable target, bytes of .text plus .data.
+# Host build numbers are a regression proxy, not a flash figure. The CI job
+# with arm-none-eabi-gcc reports the real Cortex-M4 number separately.
+text_plus_data_max_bytes=16384

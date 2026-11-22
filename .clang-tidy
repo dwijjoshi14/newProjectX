@@ -1,0 +1,19 @@
+# bugprone-easily-swappable-parameters is off on purpose. Phase quantities are
+# the same physical type by design, and a swapped pair is caught by the Clarke
+# round trip and sign convention tests, not by the type system.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  clang-analyzer-*,
+  modernize-use-nullptr,
+  modernize-use-override,
+  performance-*,
+  readability-braces-around-statements,
+  readability-const-return-type,
+  readability-misleading-indentation,
+  readability-non-const-parameter,
+  readability-redundant-*
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(firmware|sim|harness)/.*'
+FormatStyle: file

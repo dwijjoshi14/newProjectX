@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build python3
+      - name: Configure
+        run: cmake --preset dev
+      - name: Build
+        run: cmake --build --preset dev -j
+      - name: Test
+        run: ctest --preset dev --output-on-failure
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build python3
+      - name: Configure
+        run: cmake --preset asan
+      - name: Build
+        run: cmake --build --preset asan -j
+      - name: Test
+        run: ctest --preset asan --output-on-failure
+
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-format clang-tidy cppcheck
+      - name: Configure
+        run: cmake --preset dev
+      - name: Format check
+        run: |
+          find firmware sim harness tests -name '*.c' -o -name '*.h' -o -name '*.cpp' \
+            | xargs clang-format --dry-run --Werror
+      - name: clang-tidy
+        run: |
+          find firmware/src sim/src harness/src -name '*.c' -o -name '*.cpp' \
+            | xargs clang-tidy -p build/dev
+      - name: cppcheck
+        run: cppcheck --enable=warning,style,performance --error-exitcode=1 firmware sim harness
+
+  firmware-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 gcc-arm-none-eabi
+      - name: Configure and build
+        run: |
+          cmake --preset dev
+          cmake --build --preset dev -j
+      - name: Host size budget
+        run: python3 tools/check_size.py build/dev/firmware_portable firmware/firmware_size_baseline.txt
+      - name: Report the true flash number
+        continue-on-error: true
+        run: |
+          arm-none-eabi-gcc -std=c11 -mcpu=cortex-m4 -mthumb -Os -ffreestanding \
+            -Ifirmware/include -Ifirmware/portable \
+            -c firmware/src/firmware.c -o firmware_m4.o
+          arm-none-eabi-size firmware_m4.o

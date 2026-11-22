@@ -1,0 +1,18 @@
+# build output
+build/
+twin/dist/
+twin/node_modules/
+
+# local toolchain, not part of the project
+.venv/
+__pycache__/
+*.pyc
+
+# generated runs, reproducible from tools
+data/run_*/
+
+# editors and OS
+.DS_Store
+.idea/
+.vscode/
+compile_commands.json
