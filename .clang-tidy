@@ -9,6 +9,9 @@ Checks: >
   modernize-use-nullptr,
   modernize-use-override,
   performance-*,
+  # Wants a fixed underlying type for the enum, which is C23 or C++ only. A C11
+  # header cannot express it, so this check is not applicable to hal.h.
+  -performance-enum-size,
   readability-braces-around-statements,
   readability-const-return-type,
   readability-misleading-indentation,

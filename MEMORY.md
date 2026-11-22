@@ -6,4 +6,6 @@ Durable decisions and corrections. Newest last.
 - 2026-11-22 motor is Maxon EC-i 40, 70 W, 36 V, part 496655. Rejected the EC 45 flat 50 W (251601 and 651611) because both are marked NRND on maxon's site today.
 - 2026-11-22 plant uses amplitude invariant Clarke and Park with torque `T = 1.5 p lambda iq` and back EMF `e_a = -E sin(theta_e)`. Written down because sign convention errors are the top rung 1 risk.
 - 2026-11-22 determinism claim is byte identical for repeated runs of the same compiler and flags on the same architecture. Cross compiler bit identity is not claimed.
-- 2026-11-22 sandbox has no root and no apt. cmake, ninja, clang-format and clang-tidy live in `.venv`. cppcheck is not available locally, so that gate runs in CI only.
+- 2026-11-22 sandbox has no root and no apt. cmake, ninja, clang-format,
+  clang-tidy and cppcheck all live in `.venv` (cppcheck via the pip wheel,
+  version 2.22.0).

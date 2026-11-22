@@ -39,7 +39,8 @@ Phase 1, scaffolding and rung 1 of the fidelity ladder. See docs/spec.md.
 - Determinism claim: byte identical for repeated runs of the same compiler and
   flags on the same architecture. Cross compiler bit identity is not claimed.
 - Commit dates are real. No backdating to imply a longer build.
-- This sandbox has no root and no apt. cmake, ninja, clang-format and clang-tidy
-  live in .venv. cppcheck runs in CI only, and that gap is stated, never hidden.
+- This sandbox has no root and no apt. cmake, ninja, clang-format, clang-tidy and
+  cppcheck (pip wheel, 2.22.0) live in .venv. CI runs clang-tidy 18 and local is
+  23, so the CI version is the one that decides.
 - Physical sign conventions live in docs/spec.md. Change them only with a test
   that would fail under the old convention.

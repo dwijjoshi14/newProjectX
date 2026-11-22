@@ -54,6 +54,20 @@ propagating a non-zero tool exit) with the diagnostic buried in a log the run
 page does not show, so the step now prints every finding as an annotation. A
 gate that cannot say why it failed is not a gate, it is a coin flip.
 
+**Entry 9, CI clang-tidy is not the local clang-tidy.** CI runs 18, this
+sandbox has 23, and 18 reports `performance-enum-size` on `hal_status_t`. The
+suggested fix is a fixed enum underlying type, which C11 cannot express (it is
+C23 or C++). Disabled in `.clang-tidy` with that reason next to it, and the
+version drift is now written down: the CI compiler of record is the one that
+decides, and a local clean run is not evidence about CI.
+
+**Entry 10, correction to entry 2.** cppcheck is available without root after
+all, through the `cppcheck` pip wheel (version 2.22.0), installed into `.venv`.
+Entry 2 was true when written and is superseded, not deleted. Running it on
+firmware, sim and harness with `--enable=warning,style,performance
+--error-exitcode=1` reports nothing, so the local run now matches what CI is
+asked to do.
+
 ## Template for later entries
 
 ```
