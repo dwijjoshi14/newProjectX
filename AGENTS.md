@@ -27,3 +27,19 @@ core-operating-rules, critic, deep-research, tooling-connections (design-taste a
 
 ## Current phase
 Phase 1, scaffolding and rung 1 of the fidelity ladder. See docs/spec.md.
+
+## Day 1 decisions
+
+- Build window is seven working sessions, one per day. Each session ends with a
+  commit series and a one paragraph status note that also lists what was cut.
+- The simulator holds no physical constant that is not in docs/parameters.md.
+  Every row is cited or marked ASSUMED, with no third category.
+- The firmware boundary is enforced by tools/check_firmware_boundary.sh inside
+  ctest, not by review.
+- Determinism claim: byte identical for repeated runs of the same compiler and
+  flags on the same architecture. Cross compiler bit identity is not claimed.
+- Commit dates are real. No backdating to imply a longer build.
+- This sandbox has no root and no apt. cmake, ninja, clang-format and clang-tidy
+  live in .venv. cppcheck runs in CI only, and that gap is stated, never hidden.
+- Physical sign conventions live in docs/spec.md. Change them only with a test
+  that would fail under the old convention.
