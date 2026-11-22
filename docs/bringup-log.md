@@ -46,6 +46,14 @@ paper over them with NOLINT lines, the check is disabled in `.clang-tidy` with
 the reason written next to it, and the sign convention tests remain the real
 protection.
 
+**Entry 8, first CI run failed on two gates, both in the pipeline rather than
+the code.** The size step pointed at `build/dev/firmware_portable`, which does
+not exist; CMake puts it in `build/dev/firmware/`. Fixed by finding the binary
+instead of hard coding the path. The clang-tidy step exited 123 (xargs
+propagating a non-zero tool exit) with the diagnostic buried in a log the run
+page does not show, so the step now prints every finding as an annotation. A
+gate that cannot say why it failed is not a gate, it is a coin flip.
+
 ## Template for later entries
 
 ```

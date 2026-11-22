@@ -46,8 +46,18 @@ jobs:
             | xargs clang-format --dry-run --Werror
       - name: clang-tidy
         run: |
-          find firmware/src sim/src harness/src -name '*.c' -o -name '*.cpp' \
-            | xargs clang-tidy -p build/dev
+          set +e
+          files=$(find firmware/src sim/src harness/src -name '*.c' -o -name '*.cpp')
+          clang-tidy --version
+          clang-tidy -p build/dev $files > tidy.log 2>&1
+          status=$?
+          cat tidy.log
+          if [ $status -ne 0 ]; then
+            grep -E 'error:|warning:' tidy.log | head -40 | while IFS= read -r line; do
+              echo "::error title=clang-tidy::$line"
+            done
+          fi
+          exit $status
       - name: cppcheck
         run: cppcheck --enable=warning,style,performance --error-exitcode=1 firmware sim harness
 
@@ -64,7 +74,10 @@ jobs:
           cmake --preset dev
           cmake --build --preset dev -j
       - name: Host size budget
-        run: python3 tools/check_size.py build/dev/firmware_portable firmware/firmware_size_baseline.txt
+        run: |
+          binary=$(find build/dev -name firmware_portable -type f | head -1)
+          echo "measuring $binary"
+          python3 tools/check_size.py "$binary" firmware/firmware_size_baseline.txt
       - name: Report the true flash number
         continue-on-error: true
         run: |
