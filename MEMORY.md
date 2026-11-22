@@ -7,5 +7,6 @@ Durable decisions and corrections. Newest last.
 - 2026-11-22 plant uses amplitude invariant Clarke and Park with torque `T = 1.5 p lambda iq` and back EMF `e_a = -E sin(theta_e)`. Written down because sign convention errors are the top rung 1 risk.
 - 2026-11-22 determinism claim is byte identical for repeated runs of the same compiler and flags on the same architecture. Cross compiler bit identity is not claimed.
 - 2026-11-22 sandbox has no root and no apt. cmake, ninja, clang-format,
-  clang-tidy and cppcheck all live in `.venv` (cppcheck via the pip wheel,
-  version 2.22.0).
+  clang-tidy 18.1.8 and cppcheck 2.22.0 all live in `.venv`. clang-tidy is
+  pinned to 18.1.8 because that is the Ubuntu runner version, and a local clean
+  run only means something if it uses the same LLVM release.

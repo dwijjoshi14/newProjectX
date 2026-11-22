@@ -68,6 +68,14 @@ firmware, sim and harness with `--enable=warning,style,performance
 --error-exitcode=1` reports nothing, so the local run now matches what CI is
 asked to do.
 
+**Entry 11, the disable did not disable anything.** The `#` reason was written
+inside the folded `Checks:` scalar, so YAML folded it into the check list as
+literal text and the following `-performance-enum-size` was lost. Moved the
+reasons above the key. Also installed clang-tidy 18.1.8 from the pip wheel,
+which is the same LLVM release as the Ubuntu runner, so a local run now says
+something about CI instead of approximating it. Verified: tidy 18 exits 0 on
+all five translation units.
+
 ## Template for later entries
 
 ```

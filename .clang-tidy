@@ -1,6 +1,13 @@
-# bugprone-easily-swappable-parameters is off on purpose. Phase quantities are
-# the same physical type by design, and a swapped pair is caught by the Clarke
-# round trip and sign convention tests, not by the type system.
+# Two checks are off on purpose, and the reasons live here rather than inside
+# the Checks block, because text inside a folded scalar becomes part of the
+# check list and silently disables nothing.
+#
+# bugprone-easily-swappable-parameters: phase quantities are the same physical
+# type by design, and a swapped pair is caught by the Clarke round trip and the
+# sign convention tests, not by the type system.
+#
+# performance-enum-size: wants a fixed enum underlying type, which is C23 or C++
+# only. A C11 header cannot express it, so the check cannot be satisfied.
 Checks: >
   -*,
   bugprone-*,
@@ -9,8 +16,6 @@ Checks: >
   modernize-use-nullptr,
   modernize-use-override,
   performance-*,
-  # Wants a fixed underlying type for the enum, which is C23 or C++ only. A C11
-  # header cannot express it, so this check is not applicable to hal.h.
   -performance-enum-size,
   readability-braces-around-statements,
   readability-const-return-type,

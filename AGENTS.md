@@ -40,7 +40,8 @@ Phase 1, scaffolding and rung 1 of the fidelity ladder. See docs/spec.md.
   flags on the same architecture. Cross compiler bit identity is not claimed.
 - Commit dates are real. No backdating to imply a longer build.
 - This sandbox has no root and no apt. cmake, ninja, clang-format, clang-tidy and
-  cppcheck (pip wheel, 2.22.0) live in .venv. CI runs clang-tidy 18 and local is
-  23, so the CI version is the one that decides.
+  cppcheck (pip wheel, 2.22.0) live in .venv. clang-tidy is pinned to 18.1.8 to
+  match the Ubuntu runner, because a local clean run is only evidence if it
+  uses the same LLVM release.
 - Physical sign conventions live in docs/spec.md. Change them only with a test
   that would fail under the old convention.
