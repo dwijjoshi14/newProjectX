@@ -34,6 +34,18 @@ SimHalState s_state;
 
 void sim_hal_attach(tsim::IPlant &plant) {
     s_state.plant = &plant;
+    /* A new plant means a new run. Clearing the latch matters: the firmware
+     * averages the latched sample at boot to find its current offsets, and a
+     * sample left over from an earlier run would be averaged as if it belonged
+     * to this one. A converter that has not converted yet has no sample. */
+    s_state.latched = tsim::ElectricalReadout{};
+    s_state.latched_valid = false;
+    s_state.latched_timestamp_us = 0u;
+    s_state.duty[0] = 0.5f;
+    s_state.duty[1] = 0.5f;
+    s_state.duty[2] = 0.5f;
+    s_state.enabled = false;
+    s_state.fault_bits = 0u;
     const tsim::PlantParams &params = plant.params();
     s_state.board.pole_pairs = static_cast<uint32_t>(params.pole_pairs);
     s_state.board.encoder_counts_per_rev = 16384; /* 14 bit, docs/parameters.md */
@@ -77,6 +89,10 @@ hal_status_t hal_init(void) {
     }
     s_state.enabled = false;
     s_state.fault_bits = 0u;
+    /* No conversion has completed since init, so the boot offset calibration
+     * has nothing to average and leaves the offsets at zero. On a board the
+     * ADC free runs and this returns real samples. */
+    s_state.latched_valid = false;
     return HAL_OK;
 }
 
@@ -86,10 +102,15 @@ const hal_board_config_t *hal_board_config(void) {
 
 hal_status_t hal_pwm_set_duty(float duty_a, float duty_b, float duty_c) {
     const float requested[3] = {duty_a, duty_b, duty_c};
+    /* Validate all three before writing any. Writing as we went meant a vector
+     * with one bad entry left two phases on the new duty and one on the old,
+     * which is not a state any real timer can reach. */
     for (uint32_t i = 0u; i < 3u; ++i) {
         if (!(requested[i] >= 0.0f && requested[i] <= 1.0f)) {
             return HAL_ERR_ARGUMENT;
         }
+    }
+    for (uint32_t i = 0u; i < 3u; ++i) {
         s_state.duty[i] = requested[i];
     }
     return HAL_OK;
