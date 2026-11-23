@@ -125,8 +125,15 @@ ScenarioConfig parse_options(int argc, char **argv) {
 int main(int argc, char **argv) {
     const ScenarioConfig config = parse_options(argc, argv);
 
-    tsim::IdealPlant plant(tsim::maxon_ec_i_40_70w_params());
-    plant.reset(0.0);
+    const tsim::PlantParams params = tsim::maxon_ec_i_40_70w_params();
+    tsim::IdealPlant plant(params);
+    /* In the clamped rotor scenario the shaft is parked a quarter of an
+     * electrical turn in, where the q axis lines up with phase A. Clamped at
+     * zero instead, the q axis sits between B and C, phase A carries only the d
+     * axis current and the trace is a flat line at zero. True, and useless. */
+    const double initial_angle_rad =
+        config.locked_rotor ? -tsim::kTwoPi / (4.0 * params.pole_pairs) : 0.0;
+    plant.reset(initial_angle_rad);
     plant.set_rotor_locked(config.locked_rotor);
     sim_hal_attach(plant);
 
