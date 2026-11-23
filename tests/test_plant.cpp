@@ -133,3 +133,41 @@ TSIM_TEST(plant_time_is_exact) {
     TSIM_CHECK(plant.step_count() == tsim::kStepsPerControl);
     TSIM_CHECK_NEAR(plant.time_s(), tsim::kControlPeriodS, 1.0e-12);
 }
+
+TSIM_TEST(plant_step_halving_converges) {
+    /* The 1 us step is a forward Euler integrator, so its error is first order
+     * in the step. This test runs the same 2 ms RL step at three step sizes and
+     * asks whether the answer moves toward the analytic solution as the step
+     * shrinks. Without this, "1 MHz is fast enough" is an opinion. */
+    const double voltage_alpha_v = 3.6;
+    auto settle = [voltage_alpha_v](std::uint64_t step_ns) {
+        tsim::IdealPlant plant(tsim::maxon_ec_i_40_70w_params());
+        plant.reset(0.0);
+        plant.set_step_ns_for_convergence(step_ns);
+        plant.latch_inverter(
+            duty_from_alpha_beta(voltage_alpha_v, 0.0, plant.params().bus_voltage_v));
+        const std::uint32_t steps = static_cast<std::uint32_t>(2000000u / step_ns);
+        for (std::uint32_t i = 0; i < steps; ++i) {
+            plant.step_one();
+        }
+        return plant.sample_electrical().ia_a;
+    };
+
+    const double i_1us = settle(1000);
+    const double i_half_us = settle(500);
+    const double i_quarter_us = settle(250);
+
+    const double tau_s = 2.56e-4 / 0.291;
+    const double analytic_a = (voltage_alpha_v / 0.291) * (1.0 - std::exp(-2.0e-3 / tau_s));
+
+    TSIM_CHECK_NEAR(i_1us, analytic_a, 2.0e-3);
+    TSIM_CHECK_NEAR(i_half_us, analytic_a, 2.0e-3);
+    TSIM_CHECK_NEAR(i_quarter_us, analytic_a, 2.0e-3);
+
+    const double error_coarse = std::fabs(i_1us - analytic_a);
+    const double error_fine = std::fabs(i_half_us - analytic_a);
+    const double error_finest = std::fabs(i_quarter_us - analytic_a);
+    TSIM_CHECK(error_fine <= 0.75 * error_coarse);
+    TSIM_CHECK(error_finest <= 0.75 * error_fine);
+    TSIM_CHECK(error_fine < 1.0e-3 * analytic_a);
+}

@@ -94,6 +94,17 @@ class IPlant {
      * positive rotation. */
     virtual void set_external_torque_nm(double torque_nm) = 0;
 
+    /* Hold the rotor still, the way a dyno clamp does, so a current loop can be
+     * measured at standstill without the speed loop fighting it. The motor
+     * torque goes into the clamp: no speed, no angle change, and no mechanical
+     * energy leaves the shaft. */
+    virtual void set_rotor_locked(bool locked) = 0;
+
+    /* Integration step for a convergence study, ns. The harness never calls
+     * this, it runs kPlantStepNs. Halving the step and watching the answer
+     * settle is how the first order error gets bounded rather than assumed. */
+    virtual void set_step_ns_for_convergence(std::uint64_t step_ns) = 0;
+
     virtual const PlantParams &params() const = 0;
 };
 

@@ -22,10 +22,14 @@ class IdealPlant final : public IPlant {
     Telemetry telemetry() const override;
     EnergyAccount energy() const override;
     void set_external_torque_nm(double torque_nm) override;
+    void set_rotor_locked(bool locked) override;
+    void set_step_ns_for_convergence(std::uint64_t step_ns) override;
     const PlantParams &params() const override;
 
   private:
     PlantParams params_;
+    bool locked_ = false;
+    double step_s_ = kPlantStepS;
     InverterCommand command_{};
     double ia_a_ = 0.0;
     double ib_a_ = 0.0;

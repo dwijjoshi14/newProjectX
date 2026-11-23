@@ -35,6 +35,9 @@ void IdealPlant::reset(double theta_rotor_rad) {
     phase_voltage_a_v_ = 0.0;
     phase_voltage_b_v_ = 0.0;
     phase_voltage_c_v_ = 0.0;
+    p_electrical_w_ = 0.0;
+    p_copper_w_ = 0.0;
+    p_mechanical_w_ = 0.0;
     steps_ = 0;
     energy_ = EnergyAccount{};
 }
@@ -76,9 +79,9 @@ void IdealPlant::step_one() {
         const double di_c = (phase_voltage_c_v_ - params_.resistance_phase_ohm * ic_a_ - e_c) /
                             params_.inductance_phase_h;
 
-        ia_a_ += di_a * kPlantStepS;
-        ib_a_ += di_b * kPlantStepS;
-        ic_a_ += di_c * kPlantStepS;
+        ia_a_ += di_a * step_s_;
+        ib_a_ += di_b * step_s_;
+        ic_a_ += di_c * step_s_;
 
         /* Torque from the q axis current, amplitude invariant: T = 1.5 p lambda iq. */
         const double i_alpha_a = clarke_alpha(ia_a_, ib_a_, ic_a_);
@@ -90,21 +93,29 @@ void IdealPlant::step_one() {
             phase_voltage_a_v_ * ia_a_ + phase_voltage_b_v_ * ib_a_ + phase_voltage_c_v_ * ic_a_;
         p_copper_w_ =
             params_.resistance_phase_ohm * (ia_a_ * ia_a_ + ib_a_ * ib_a_ + ic_a_ * ic_a_);
-        energy_.electrical_j += p_electrical_w_ * kPlantStepS;
-        energy_.copper_j += p_copper_w_ * kPlantStepS;
+        energy_.electrical_j += p_electrical_w_ * step_s_;
+        energy_.copper_j += p_copper_w_ * step_s_;
     }
 
     p_mechanical_w_ = torque_motor_nm_ * omega_rotor_rad_s_;
-    energy_.mechanical_j += p_mechanical_w_ * kPlantStepS;
+    energy_.mechanical_j += p_mechanical_w_ * step_s_;
+
+    if (locked_) {
+        /* Clamped rotor: the torque is reacted by the clamp, so speed and angle
+         * stay put and no mechanical work crosses the shaft. */
+        omega_rotor_rad_s_ = 0.0;
+        steps_ += 1;
+        return;
+    }
 
     const double p_viscous_w =
         params_.viscous_friction_nm_s_per_rad * omega_rotor_rad_s_ * omega_rotor_rad_s_;
-    energy_.viscous_j += p_viscous_w * kPlantStepS;
+    energy_.viscous_j += p_viscous_w * step_s_;
 
     const double torque_net_nm = torque_motor_nm_ - torque_external_nm_ -
                                  params_.viscous_friction_nm_s_per_rad * omega_rotor_rad_s_;
-    omega_rotor_rad_s_ += (torque_net_nm / params_.inertia_kg_m2) * kPlantStepS;
-    theta_rotor_rad_ += omega_rotor_rad_s_ * kPlantStepS;
+    omega_rotor_rad_s_ += (torque_net_nm / params_.inertia_kg_m2) * step_s_;
+    theta_rotor_rad_ += omega_rotor_rad_s_ * step_s_;
     steps_ += 1;
 }
 
@@ -113,7 +124,7 @@ std::uint64_t IdealPlant::step_count() const {
 }
 
 double IdealPlant::time_s() const {
-    return static_cast<double>(steps_) * kPlantStepS;
+    return static_cast<double>(steps_) * step_s_;
 }
 
 ElectricalReadout IdealPlant::sample_electrical() const {
@@ -135,6 +146,17 @@ EnergyAccount IdealPlant::energy() const {
 
 void IdealPlant::set_external_torque_nm(double torque_nm) {
     torque_external_nm_ = torque_nm;
+}
+
+void IdealPlant::set_rotor_locked(bool locked) {
+    locked_ = locked;
+}
+
+void IdealPlant::set_step_ns_for_convergence(std::uint64_t step_ns) {
+    if (step_ns == 0) {
+        return;
+    }
+    step_s_ = 1.0e-9 * static_cast<double>(step_ns);
 }
 
 const PlantParams &IdealPlant::params() const {
