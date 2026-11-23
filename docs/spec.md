@@ -61,6 +61,7 @@ can lag wall time and the lag is logged.
 | Day | Work | Artefact at the end |
 |---|---|---|
 | 1 | Scaffolding, hal.h, portable target, boundary and size gates, ideal plant, deterministic harness | Repo that builds and tests on a clean clone |
+| 2 | done. Clarke, Park, SVPWM, current and speed loops, validation against analytic plant response | Closed loop single motor, speed and current plot |
 | 2 | Clarke, Park, SVPWM, current and speed loops, validation against analytic plant response | Closed loop single motor, speed and current plot |
 | 3 | Real inverter: dead time, Ron, switching loss, bus ripple, compensation; sensing chain | Dead time THD figure, sampling instant figure |
 | 4 | Mechanics and load: friction, backlash, two mass, hand, wall; velocity and position cascade; impedance control | Bode plot from swept sine, bandwidth and margin |
@@ -84,6 +85,67 @@ ends with a written note on what was cut or reduced.
   so the freestanding claim covers the real sources, not a proxy file.
 - The harness implements `hal.h` itself, so day 1 already exercises the full
   seam: plant, HAL, firmware tick, duty, plant.
+
+## Day 2 decisions
+
+- Control structure: Clarke, Park and space vector modulation, a PI current
+  loop on d and q at 20 kHz, a PI speed loop at 2 kHz whose output is the q
+  current reference, and a first order filter in front of the speed reference.
+  No other compensator exists yet.
+- Current loop gains. Kp = 1.61 V/A puts the crossover at Kp / L =
+  1.61 / 0.256 mH = 6.29 krad/s, which is 1.0 kHz. Ki = Kp R / L = 1830 V/(A s)
+  puts the PI zero on the winding pole at 1137 rad/s, so the loop reduces to one
+  pole at the crossover. The 75 us pipeline delay costs 27 degrees there, which
+  leaves about 60. Both gains come from the datasheet row in
+  `docs/parameters.md`, not from a tuning session.
+- Speed loop gains. Kp = 0.0313 A per rad/s puts the crossover at
+  Kp Kt / J = 627 rad/s, about 100 Hz. Ki = 2.95 A/(rad s) puts the integral
+  zero at 94 rad/s, roughly a seventh of the crossover, so the margin before
+  the sampling lag is 81 degrees. The ten tick velocity estimate and the 2 kHz
+  update take about 30 of those back, which is what the measured response shows.
+- The speed command is filtered at 10 ms. A step command enters a loop with
+  about 50 degrees of margin and comes out as an 18 percent overshoot, measured
+  during the day. The filter removes that excitation without touching
+  disturbance rejection, and the joint still answers a step in 17 ms.
+- The q current reference is clamped at stall current, 61.8 A, not at
+  continuous current, because a haptic joint has to be able to answer a peak
+  torque and there is no thermal network yet to make the continuous number
+  real. The speed loop's output is clamped at 2.74 A, the conservative choice
+  while the thermal model is missing.
+- Modulation is minimum maximum zero sequence injection with the voltage
+  magnitude limited to 95 percent of bus / sqrt(3). No allowance is made for
+  dead time, because there is no dead time until day 3.
+- Sine and cosine are an eleventh order polynomial after a quadrant fold, worst
+  case 1.4e-7, because the firmware may not link libm. The square root used for
+  the voltage circle normalises into [1, 4) with exact power of two steps and
+  then runs six Newton iterations, which is a fixed cost.
+- The closed loop test and the harness share one control window function,
+  `harness/src/sim_loop.cpp`, so the timing cannot drift between the thing that
+  is measured and the thing that draws the picture.
+
+## Day 2 status and what was cut
+
+One motor, closed loop in current and in speed, with two figures and a measured
+comparison against an independent discrete model. Cut or deferred, in the order
+they matter:
+
+- No d/q decoupling and no back EMF feedforward. The PI rejects both, and the
+  price is visible: 0.071 A of d axis current during a 200 rad/s transient.
+  Day 3 adds them, because dead time compensation needs the same voltage
+  estimates.
+- No field weakening and no overmodulation. The voltage limit is a circle at
+  95 percent of the linear range.
+- No thermal limit. Current mode can ask for stall current indefinitely, which
+  this model cannot punish and a real motor would punish quickly.
+- No current sensor noise, offset drift or gain error. The plant currents are
+  exact and the offsets are calibrated once at boot.
+- The velocity estimate is a ten tick encoder difference with no observer, so
+  it lags by up to 0.5 ms and quantises to 0.77 rad/s at 14 bits.
+- The speed loop is measured on the bare rotor. At 2.3e-6 kg m^2 a 50 mNm load
+  step is a violent disturbance, and most of the 13.7 percent dip is inertia
+  rather than tuning. Day 4 puts a handle on it.
+- Saturation, cogging, Coulomb friction, backlash and switching remain
+  unmodelled, as listed in `docs/model-limits.md`.
 
 ## Method notes
 

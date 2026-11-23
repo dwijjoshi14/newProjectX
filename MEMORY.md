@@ -10,3 +10,19 @@ Durable decisions and corrections. Newest last.
   clang-tidy 18.1.8 and cppcheck 2.22.0 all live in `.venv`. clang-tidy is
   pinned to 18.1.8 because that is the Ubuntu runner version, and a local clean
   run only means something if it uses the same LLVM release.
+- 2026-11-23 day 2. Current loop is a PI at 20 kHz with Kp = 1.61 V/A, which is
+  a 1 kHz crossover on 0.256 mH, and Ki on the winding pole at 1137 rad/s.
+  Speed loop is 100 Hz behind a 10 ms command filter, because the ten tick
+  velocity estimate costs about 0.6 ms of lag and the delay eats 30 degrees of
+  the formula's margin. Both loops validated against a discrete reference model
+  (`tools/reference_current_loop.py`), not against a continuous formula: the
+  reference model agrees with the harness to 0.1 percent, 222 us both ways, while
+  the continuous estimate for the same rise is 350 us. The continuous formula is
+  not a tolerance for a sampled loop at a 1 kHz crossover; the model is.
+- 2026-11-23 the bare rotor makes a 50 mNm load step violent, because T / J is
+  21700 rad/s^2 and the delay alone allows a 13 rad/s dip. The measured 13.7
+  percent dip is inertia, not tuning. Do not quote it as a joint property until
+  day 4 puts the handle on.
+- 2026-11-23 cppcheck 2.22.0 no longer resolves from this sandbox's pip index,
+  so static analysis is CI only again and the day 1 claim about a local
+  cppcheck run does not hold today. clang-tidy 18.1.8 still runs locally.

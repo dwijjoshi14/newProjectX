@@ -76,6 +76,73 @@ which is the same LLVM release as the Ubuntu runner, so a local run now says
 something about CI instead of approximating it. Verified: tidy 18 exits 0 on
 all five translation units.
 
+## 2026-11-23, day 2
+
+**Entry 12, cppcheck pin no longer resolves.** The same `cppcheck==2.22.0` pin
+that installed on day 1 is refused by this index today: only versions up to
+1.5.3 are offered. Rather than install an ancient cppcheck that would report
+different findings and call it a pass, static analysis is CI only again until
+the pin resolves. The rest of the toolchain reinstalled from the same pins, and
+clang-tidy 18.1.8 still runs here, so the tidy claim stands and the cppcheck
+claim does not.
+
+**Entry 13, the sine approximation had the wrong sign on its last term.** The
+eleventh order coefficient was entered as plus 1/11! instead of minus, so the
+error at the peak of the sine was 7e-6 instead of 1.4e-7. The transform round
+trip test failed at its 1e-5 tolerance, which is the only reason it was found
+before a loop ran on it. One character, and a reminder that a polynomial is a
+place where a sign is as easy to get wrong as in a frame transform.
+
+**Entry 14, the first speed loop could not hold its own rotor.** Designed at
+12 Hz from the standard PI on an inertia formula, it looked fine on paper. A
+50 mNm load step dropped the shaft from 200 rad/s to 39 before it reacted. The
+disturbance rate is T / J = 21700 rad/s^2, so the loop's 13 ms reaction time was
+most of the available speed. Redesigned at 100 Hz. No amount of reading the
+datasheet table shows you this; the trace does.
+
+**Entry 15, then it rang.** At 80 Hz with a slew limited command the step still
+overshot 17.6 percent, because the ten tick velocity estimate adds about 0.6 ms
+of lag, and at that crossover 0.6 ms is 30 degrees of the margin the formula
+promised. The fix was not more damping in the PI and it was not a lower gain,
+which would have made the load dip worse. It was a 10 ms first order filter on
+the command, which removes the excitation and spends nothing from the voltage
+budget. Overshoot after the change, 0.09 percent. Dip unchanged at 13.7 percent.
+
+**Entry 16, a square root that crawls.** `foc_sqrt` ran eight Newton steps from
+max(x, 1). For an argument of 1e-6 that is ten halvings short of the
+neighbourhood of the root, so the answer was 0.0039 instead of 0.001. The range
+test caught it before any loop used it. Fixed by normalising into [1, 4) with
+exact power of two steps and then running six Newton steps, which is also a
+fixed cost, and a fixed cost is what a 50 us budget wants.
+
+**Entry 17, the HAL applied duties until it found a bad one.**
+`hal_pwm_set_duty` validated and wrote in the same loop, so a vector whose third
+phase was out of range left two phases on the new value and one on the old. No
+timer can be in that state. Found while adding the space vector modulation,
+whose whole job is to keep the vector inside the range. Fixed by validating all
+three before writing any.
+
+**Entry 18, tests shared an offset through a stale latch.** The boot current
+offset calibration averages the latched sample. In a test executable, the second
+test to run inherited the first test's last current as its offset, so the speed
+test failed only when it ran after the saturation test and passed on its own.
+That kind of order dependence is worse than a broken test, because it teaches
+you to rerun until it passes. Fixed in the harness: attaching a plant clears the
+latch, and init reports no valid sample, so calibration on the host is the
+documented no op. A board free runs its ADC and this path returns real samples.
+
+**Entry 19, the determinism gate caught the gate.** The new repeat run test
+compares two runs byte for byte and failed on the first try because the console
+summary prints the output path, which differs by construction. Normalised that
+one line out. Kept in the log on purpose: a gate that fails for a reason
+unrelated to what it checks is a gate people learn to ignore.
+
+**Entry 20, clang-tidy on the control code.** `bugprone-macro-parentheses`
+fired on the negative sine coefficients. Fixed by parenthesising the constants,
+which is what the check asks for, rather than disabling the check. Everything
+else in the new code passed 18.1.8 with warnings as errors on the firmware, sim
+and harness translation units.
+
 ## Template for later entries
 
 ```
