@@ -10,6 +10,7 @@
 #include "tsim/ideal_plant.h"
 #include "tsim/plant.h"
 #include "tsim/plant_params.h"
+#include "tsim/switching_plant.h"
 #include "tsim_test.h"
 
 namespace {
@@ -38,6 +39,13 @@ double crossing_time_s(const std::vector<double> &values, double level, double p
         }
     }
     return -1.0;
+}
+
+/* Plant and inverter for the day 3 measurements: real switching, dead time,
+ * device drop, a link that moves. The average plant stays available for the
+ * tests that are about the controller alone. */
+tsim::InverterParams realistic_inverter() {
+    return tsim::inverter_params_realistic();
 }
 
 void prepare_locked_plant(tsim::IdealPlant &plant) {
@@ -208,4 +216,86 @@ TSIM_TEST(speed_loop_tracks_a_step_and_rejects_a_load) {
     TSIM_CHECK_NEAR(final_iq, 1.13, 0.1);
     TSIM_CHECK(plant.mechanical().theta_rotor_rad > 0.0);
     TSIM_CHECK(firmware_status()->fault_bits == 0u);
+}
+
+TSIM_TEST(feedforward_takes_the_d_axis_error_out_of_a_speed_transient) {
+    /* Day 2 left the cross coupling and the back EMF to the PI and paid 0.071 A
+     * of d axis current for it during this step. Both terms are now fed
+     * forward from the measured current and the 2 kHz speed estimate, so what
+     * is left is the error in that estimate, not the disturbance itself. */
+    tsim::IdealPlant plant(tsim::maxon_ec_i_40_70w_params());
+    plant.reset(0.0);
+    sim_hal_attach(plant);
+    firmware_init();
+    firmware_set_mode(FIRMWARE_MODE_SPEED);
+    firmware_set_speed_reference_rad_s(kSpeedReferenceRadS);
+
+    double worst_id = 0.0;
+    double worst_id_before_rotation = 0.0;
+    for (std::uint32_t tick = 0; tick < kSpeedLoopTicks; ++tick) {
+        plant.set_external_torque_nm((tick >= kLoadStepTick) ? kLoadTorqueNm : 0.0);
+        sim_run_window(plant, tick);
+        const double id = std::fabs(static_cast<double>(firmware_status()->id_a));
+        if (tick > 2 * HAL_VELOCITY_DIVIDER) {
+            worst_id = std::max(worst_id, id);
+            worst_id_before_rotation = std::max(worst_id_before_rotation, id);
+        }
+    }
+    TSIM_CHECK(worst_id < 0.035);
+    TSIM_CHECK(worst_id_before_rotation < 0.035);
+    /* The feedforward terms have to be doing something, not reading zero. */
+    TSIM_CHECK(std::fabs(static_cast<double>(firmware_status()->vq_ff_v)) > 1.0);
+    TSIM_CHECK(std::fabs(static_cast<double>(firmware_status()->vd_ff_v)) > 0.01);
+    TSIM_CHECK(firmware_status()->dead_time_compensation);
+}
+
+TSIM_TEST(dead_time_compensation_removes_most_of_the_current_distortion) {
+    /* Low speed on the switching plant: 30 rad/s is 33 Hz electrical, where the
+     * back EMF is small enough that the 0.36 V dead time error is a large part
+     * of the applied voltage. The measure is the ripple of the q axis current
+     * about its own mean, taken over the last electrical cycle, because dead
+     * time distortion lands on the sixth harmonic of the electrical frequency
+     * and that harmonic is what shows up in q. The load is 90 mNm, so the
+     * current is 1.95 A and the distortion is not buried under the resolution
+     * of the measurement itself. */
+    const float reference_rad_s = 30.0f;
+    const std::uint32_t ticks = 4000;
+    const std::uint32_t cycle_ticks = 600; /* one electrical cycle at 33 Hz */
+    const std::uint32_t first = ticks - cycle_ticks;
+
+    auto measure = [&](bool compensation) {
+        tsim::SwitchingPlant plant(tsim::maxon_ec_i_40_70w_params(), realistic_inverter());
+        plant.reset(0.0);
+        sim_hal_attach(plant);
+        sim_hal_set_board_dead_time_s(500.0e-9f);
+        sim_hal_set_imperfections(false);
+        firmware_init();
+        firmware_set_dead_time_compensation(compensation);
+        firmware_set_mode(FIRMWARE_MODE_SPEED);
+        firmware_set_speed_reference_rad_s(reference_rad_s);
+
+        std::vector<double> iq;
+        for (std::uint32_t tick = 0; tick < ticks; ++tick) {
+            plant.set_external_torque_nm(0.09);
+            sim_run_window(plant, tick);
+            if (tick >= first) {
+                iq.push_back(static_cast<double>(firmware_status()->iq_a));
+            }
+        }
+        double mean = 0.0;
+        for (const double value : iq) {
+            mean += value;
+        }
+        mean /= static_cast<double>(iq.size());
+        double energy = 0.0;
+        for (const double value : iq) {
+            energy += (value - mean) * (value - mean);
+        }
+        return std::sqrt(energy / static_cast<double>(iq.size()));
+    };
+
+    const double off_ripple_a = measure(false);
+    const double on_ripple_a = measure(true);
+    TSIM_CHECK(off_ripple_a > 0.01);
+    TSIM_CHECK(on_ripple_a < 0.3 * off_ripple_a);
 }

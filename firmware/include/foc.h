@@ -78,6 +78,27 @@ foc_dq_t foc_limit_magnitude(foc_dq_t dq, float limit_v);
  * space vector modulation has over sine triangle modulation. */
 foc_phase_t foc_svpwm(foc_alphabeta_t voltage_ab_v, float bus_v);
 
+/* Add back the volt seconds the gate dead time removes, phase frame.
+ *
+ * Each leg loses bus * dead_time / period of average voltage while its current
+ * is positive and gains the same while it is negative, because during the dead
+ * interval the winding freewheels through whichever body diode is forward
+ * biased. That is a voltage error of the sign of the current, and left alone it
+ * is a 0.36 V square wave at 36 V and 500 ns, which at this winding is more
+ * than an amp of distortion.
+ *
+ * The compensation is the same expression with the opposite sign, added to
+ * each phase voltage and then referred back to alpha beta with the common mode
+ * removed, since the floating neutral cannot see it. linear_a fades the
+ * correction out below the current where the sign stops being single valued
+ * inside one switching period; passing zero gives a hard sign.
+ *
+ * Returns the input unchanged when the bus, the dead time or the period is not
+ * positive, so a drive that has not been commissioned cannot divide by zero. */
+foc_alphabeta_t foc_dead_time_compensate(foc_alphabeta_t voltage_ab_v, foc_phase_t current_a,
+                                         float bus_v, float dead_time_s, float pwm_period_s,
+                                         float linear_a);
+
 #ifdef __cplusplus
 }
 #endif

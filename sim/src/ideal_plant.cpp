@@ -128,7 +128,13 @@ double IdealPlant::time_s() const {
 }
 
 ElectricalReadout IdealPlant::sample_electrical() const {
-    return ElectricalReadout{ia_a_, ib_a_, ic_a_, params_.bus_voltage_v};
+    return ElectricalReadout{ia_a_,
+                             ib_a_,
+                             ic_a_,
+                             phase_voltage_a_v_,
+                             phase_voltage_b_v_,
+                             phase_voltage_c_v_,
+                             params_.bus_voltage_v};
 }
 
 MechanicalState IdealPlant::mechanical() const {

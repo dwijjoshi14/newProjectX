@@ -2,6 +2,7 @@
 #ifndef TSIM_FIRMWARE_H
 #define TSIM_FIRMWARE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -18,18 +19,21 @@ typedef enum {
 } firmware_mode_t;
 
 typedef struct {
-    uint32_t ticks;       /* control ticks executed since boot, count */
-    firmware_mode_t mode; /* active reference path */
-    float theta_e_rad;    /* electrical angle, rad, electrical frame */
-    float current_peak_a; /* largest phase current magnitude in the last tick, A */
-    float omega_rad_s;    /* measured rotor speed, rad/s, rotor frame */
-    float iq_ref_a;       /* q axis current reference in use, A */
-    float id_a;           /* measured d axis current, A, rotor frame */
-    float iq_a;           /* measured q axis current, A, rotor frame */
-    float vd_v;           /* voltage applied, d axis, V */
-    float vq_v;           /* voltage applied, q axis, V */
-    float bus_v;          /* DC link measured this tick, V */
-    uint32_t fault_bits;  /* last latched fault mask, HAL_FAULT_* bits */
+    uint32_t ticks;              /* control ticks executed since boot, count */
+    firmware_mode_t mode;        /* active reference path */
+    float theta_e_rad;           /* electrical angle, rad, electrical frame */
+    float current_peak_a;        /* largest phase current magnitude in the last tick, A */
+    float omega_rad_s;           /* measured rotor speed, rad/s, rotor frame */
+    float iq_ref_a;              /* q axis current reference in use, A */
+    float id_a;                  /* measured d axis current, A, rotor frame */
+    float iq_a;                  /* measured q axis current, A, rotor frame */
+    float vd_v;                  /* voltage applied, d axis, V */
+    float vq_v;                  /* voltage applied, q axis, V */
+    float vd_ff_v;               /* d axis feedforward inside vd_v, V */
+    float vq_ff_v;               /* q axis feedforward inside vq_v, V */
+    float bus_v;                 /* DC link measured this tick, V */
+    bool dead_time_compensation; /* compensation enabled this tick, bool */
+    uint32_t fault_bits;         /* last latched fault mask, HAL_FAULT_* bits */
 } firmware_status_t;
 
 /* Bring the drive up: HAL, sensor offsets, PWM off then armed. */
@@ -47,6 +51,11 @@ void firmware_set_current_reference_a(float iq_a);
 
 /* Rotor speed reference, rad/s, rotor frame. Used in speed mode. */
 void firmware_set_speed_reference_rad_s(float omega_rad_s);
+
+/* Enable or disable gate dead time compensation. Enabled at boot, because a
+ * drive that knows its dead time should use it. Disabled only to measure what
+ * it buys, which is what docs/results.md day 3 does. */
+void firmware_set_dead_time_compensation(bool enable);
 
 /* One control tick, 20 kHz. Must finish inside 50 us. */
 void firmware_tick(void);

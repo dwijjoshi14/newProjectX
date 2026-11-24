@@ -193,6 +193,60 @@ TSIM_TEST(svpwm_clamps_an_over_modulated_request) {
     TSIM_CHECK(dead.c == 0.5f);
 }
 
+TSIM_TEST(dead_time_compensation_is_the_inverse_of_the_voltage_the_gates_lose) {
+    /* Bus 36 V, 500 ns in a 50 us period: 0.36 V per leg, signed by the phase
+     * current. The currents sum to zero as they must in a floating wye, so the
+     * raw correction has a common mode of -0.12 V which has to be removed.
+     * What is left is a 0.48 V move on alpha, not 0.36 V, and that difference
+     * is the neutral shift rather than an error. */
+    foc_alphabeta_t requested;
+    requested.alpha = 3.0f;
+    requested.beta = 0.0f;
+    foc_phase_t current_a;
+    current_a.a = 2.0f;
+    current_a.b = -1.0f;
+    current_a.c = -1.0f;
+
+    const foc_alphabeta_t corrected =
+        foc_dead_time_compensate(requested, current_a, 36.0f, 500.0e-9f, 50.0e-6f, 0.5f);
+    TSIM_CHECK_NEAR(corrected.alpha, 3.48, 1.0e-4);
+    TSIM_CHECK_NEAR(corrected.beta, 0.0, 1.0e-4);
+
+    /* The inverse sign for the negative half of the cycle. */
+    current_a.a = -2.0f;
+    current_a.b = 1.0f;
+    current_a.c = 1.0f;
+    const foc_alphabeta_t mirrored =
+        foc_dead_time_compensate(requested, current_a, 36.0f, 500.0e-9f, 50.0e-6f, 0.5f);
+    TSIM_CHECK_NEAR(mirrored.alpha, 2.52, 1.0e-4);
+
+    /* Three equal currents: the correction is pure common mode, and a floating
+     * neutral cannot see it. A drive that applied the correction without
+     * removing the mean would push its own neutral around and call it a fix. */
+    current_a.a = 2.0f;
+    current_a.b = 2.0f;
+    current_a.c = 2.0f;
+    const foc_alphabeta_t common =
+        foc_dead_time_compensate(requested, current_a, 36.0f, 500.0e-9f, 50.0e-6f, 0.5f);
+    TSIM_CHECK_NEAR(common.alpha, 3.0, 1.0e-5);
+    TSIM_CHECK_NEAR(common.beta, 0.0, 1.0e-5);
+
+    /* Zero current, or a drive that has not been commissioned, changes
+     * nothing. Both of those are the states a real board boots in. */
+    current_a.a = 0.0f;
+    current_a.b = 0.0f;
+    current_a.c = 0.0f;
+    const foc_alphabeta_t no_current =
+        foc_dead_time_compensate(requested, current_a, 36.0f, 500.0e-9f, 50.0e-6f, 0.5f);
+    TSIM_CHECK_NEAR(no_current.alpha, 3.0, 1.0e-5);
+    const foc_alphabeta_t no_dead_time =
+        foc_dead_time_compensate(requested, current_a, 36.0f, 0.0f, 50.0e-6f, 0.5f);
+    TSIM_CHECK_NEAR(no_dead_time.alpha, 3.0, 1.0e-5);
+    const foc_alphabeta_t no_bus =
+        foc_dead_time_compensate(requested, current_a, 0.0f, 500.0e-9f, 50.0e-6f, 0.5f);
+    TSIM_CHECK_NEAR(no_bus.alpha, 3.0, 1.0e-5);
+}
+
 TSIM_TEST(vector_limiting_scales_the_direction_into_the_circle) {
     foc_dq_t vector;
     vector.d = 30.0f;

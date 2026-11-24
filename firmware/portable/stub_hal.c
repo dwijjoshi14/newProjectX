@@ -16,6 +16,8 @@
 #define STUB_ENCODER_COUNTS_PER_REV 16384 /* 14 bit, docs/parameters.md */
 #define STUB_POLE_PAIRS 7u                /* docs/parameters.md */
 #define STUB_AMBIENT_C 25.0f              /* bench ambient, degC */
+#define STUB_INDUCTANCE_H 2.56e-4f        /* phase inductance, parameters.md */
+#define STUB_FLUX_LINKAGE_WB 4.39e-3f     /* flux linkage, parameters.md */
 
 static hal_board_config_t s_board = {
     STUB_POLE_PAIRS,
@@ -29,6 +31,8 @@ static hal_board_config_t s_board = {
     STUB_BUS_VOLTAGE_NOMINAL_V,
     STUB_DEAD_TIME_S,
     STUB_PWM_PERIOD_S,
+    STUB_INDUCTANCE_H,
+    STUB_FLUX_LINKAGE_WB,
 };
 
 static float s_duty[3] = {0.5f, 0.5f, 0.5f};

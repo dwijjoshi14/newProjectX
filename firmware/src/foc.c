@@ -144,6 +144,52 @@ static float foc_clamp_duty(float duty) {
     return duty;
 }
 
+/* Sign of a phase current, faded to zero inside linear_a. A hard sign near a
+ * zero crossing alternates every switching period and adds distortion of its
+ * own, which is the opposite of the point. */
+static float foc_current_sign(float current_a, float linear_a) {
+    if (!(linear_a > 0.0f)) {
+        if (current_a > 0.0f) {
+            return 1.0f;
+        }
+        if (current_a < 0.0f) {
+            return -1.0f;
+        }
+        return 0.0f;
+    }
+    float normalised = current_a / linear_a;
+    if (normalised > 1.0f) {
+        normalised = 1.0f;
+    } else if (normalised < -1.0f) {
+        normalised = -1.0f;
+    }
+    return normalised;
+}
+
+foc_alphabeta_t foc_dead_time_compensate(foc_alphabeta_t voltage_ab_v, foc_phase_t current_a,
+                                         float bus_v, float dead_time_s, float pwm_period_s,
+                                         float linear_a) {
+    if (!(bus_v > 0.0f) || !(dead_time_s > 0.0f) || !(pwm_period_s > 0.0f)) {
+        return voltage_ab_v;
+    }
+    const float error_v = bus_v * (dead_time_s / pwm_period_s);
+    const foc_phase_t winding = foc_inverse_clarke(voltage_ab_v);
+
+    foc_phase_t corrected;
+    corrected.a = winding.a + foc_current_sign(current_a.a, linear_a) * error_v;
+    corrected.b = winding.b + foc_current_sign(current_a.b, linear_a) * error_v;
+    corrected.c = winding.c + foc_current_sign(current_a.c, linear_a) * error_v;
+
+    /* The neutral is floating, so whatever the three corrections have in
+     * common never reaches the winding. Removing it here keeps the alpha beta
+     * vector free of a common mode that the modulator would only remove later. */
+    const float mean_v = (corrected.a + corrected.b + corrected.c) / 3.0f;
+    corrected.a -= mean_v;
+    corrected.b -= mean_v;
+    corrected.c -= mean_v;
+    return foc_clarke(corrected);
+}
+
 foc_phase_t foc_svpwm(foc_alphabeta_t voltage_ab_v, float bus_v) {
     foc_phase_t duty;
     if (!(bus_v > 0.0f)) {

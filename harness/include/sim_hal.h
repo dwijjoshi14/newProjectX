@@ -24,6 +24,20 @@ void sim_hal_latch_sample(const tsim::ElectricalReadout &sample, std::uint32_t t
 /* Advance the HAL clock, us. The harness calls this, nothing else. */
 void sim_hal_set_time_us(std::uint64_t time_us);
 
+/* Turn the sensing chain on: shunt gain error, amplifier offset, 12 bit
+ * quantisation, 1.5 us of encoder latency and 0.05 deg RMS of encoder noise.
+ * Off by default, so a test that wants to measure the controller measures the
+ * controller and not the converter. Every value is ASSUMED in
+ * docs/parameters.md. Resets the noise seed when called, so two runs of the
+ * same binary see the same noise. */
+void sim_hal_set_imperfections(bool enable);
+
+/* Gate dead time the board config reports, s. The harness sets this to the
+ * inverter model's dead time, because a drive can only compensate what its
+ * config claims, and a study that changes one without the other is measuring
+ * the mismatch rather than the compensation. */
+void sim_hal_set_board_dead_time_s(float dead_time_s);
+
 /* Telemetry frames refused by the ring buffer, count. */
 std::uint32_t sim_hal_telemetry_drops();
 

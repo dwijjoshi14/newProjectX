@@ -1,11 +1,16 @@
-/* Field oriented control firmware. Day 2: Clarke, Park, space vector
- * modulation, one current loop at 20 kHz and one speed loop at 2 kHz.
+/* Field oriented control firmware. Clarke, Park, space vector modulation, a
+ * current loop at 20 kHz and a speed loop at 2 kHz, plus the two voltage terms
+ * a drive needs once the inverter is real: d/q decoupling with back EMF
+ * feedforward, and gate dead time compensation.
  *
- * Everything on the control path is float arithmetic in this repository, so
- * the portable target links no libm and the boundary gate still means
- * something. The gains below are design targets derived from cited motor
- * parameters. Whether they deliver what the design predicts is a measurement,
- * and it lives in docs/results.md.
+ * Both of those need the motor parameters and the gate dead time, which arrive
+ * through hal_board_config. Nothing in this file is specific to a simulator,
+ * a board or a motor: change the config and the same source runs elsewhere.
+ *
+ * Everything on the control path is float arithmetic, so the portable target
+ * links no libm and the boundary gate still means something. The gains below
+ * are design targets derived from cited motor parameters. Whether they deliver
+ * what the design predicts is a measurement, and it lives in docs/results.md.
  */
 
 #include "firmware.h"
@@ -57,7 +62,13 @@
 
 #define FIRMWARE_CONTINUOUS_CURRENT_A 2.74f /* datasheet continuous current, A */
 #define FIRMWARE_STALL_CURRENT_A 61.8f      /* datasheet stall current, A */
-#define FIRMWARE_LINEAR_MODULATION 0.95f    /* fraction of bus / sqrt(3) used */
+/* Below this phase current the dead time compensation fades out linearly.
+ * The sign of the current is not single valued inside one switching period
+ * once the ripple crosses zero, so a hard sign there would add distortion in
+ * the name of removing it. Half the predicted 1.76 A ripple is the point where
+ * the sign starts to be trustworthy. */
+#define FIRMWARE_DEAD_TIME_LINEAR_A 0.5f
+#define FIRMWARE_LINEAR_MODULATION 0.95f /* fraction of bus / sqrt(3) used */
 #define FIRMWARE_ONE_OVER_SQRT3 0.57735027f
 #define FIRMWARE_BUS_MIN_V 6.0f     /* below this the gate holds the zero vector, V */
 #define FIRMWARE_MAX_POLE_PAIRS 64u /* board config sanity limit, count */
@@ -75,6 +86,7 @@ static float s_speed_command_rad_s;
 static float s_voltage_limit_v;
 static int64_t s_last_velocity_counts;
 static uint32_t s_velocity_divider;
+static bool s_dead_time_compensation;
 static pi_regulator_t s_pi_d;
 static pi_regulator_t s_pi_q;
 static pi_regulator_t s_pi_speed;
@@ -157,7 +169,10 @@ void firmware_init(void) {
     s_status.iq_a = 0.0f;
     s_status.vd_v = 0.0f;
     s_status.vq_v = 0.0f;
+    s_status.vd_ff_v = 0.0f;
+    s_status.vq_ff_v = 0.0f;
     s_status.bus_v = 0.0f;
+    s_status.dead_time_compensation = true;
     s_status.fault_bits = 0u;
     s_offset_ia_a = 0.0f;
     s_offset_ib_a = 0.0f;
@@ -170,6 +185,7 @@ void firmware_init(void) {
     s_voltage_limit_v = 0.0f;
     s_last_velocity_counts = 0;
     s_velocity_divider = 0u;
+    s_dead_time_compensation = true;
 
     pi_init(&s_pi_d, FIRMWARE_CURRENT_KP_V_PER_A, FIRMWARE_CURRENT_KI_V_PER_A_S,
             FIRMWARE_CONTROL_PERIOD_S, 0.0f);
@@ -228,6 +244,11 @@ void firmware_set_current_reference_a(float iq_a) {
 
 void firmware_set_speed_reference_rad_s(float omega_rad_s) {
     s_speed_reference_rad_s = omega_rad_s;
+}
+
+void firmware_set_dead_time_compensation(bool enable) {
+    s_dead_time_compensation = enable;
+    s_status.dead_time_compensation = enable;
 }
 
 void firmware_tick(void) {
@@ -297,6 +318,8 @@ void firmware_tick(void) {
         s_status.iq_ref_a = 0.0f;
         s_status.vd_v = 0.0f;
         s_status.vq_v = 0.0f;
+        s_status.vd_ff_v = 0.0f;
+        s_status.vq_ff_v = 0.0f;
         pi_reset(&s_pi_d);
         pi_reset(&s_pi_q);
         pi_reset(&s_pi_speed);
@@ -321,16 +344,49 @@ void firmware_tick(void) {
     }
     s_status.iq_ref_a = s_iq_reference_a;
 
-    pi_set_limit(&s_pi_d, s_voltage_limit_v);
-    pi_set_limit(&s_pi_q, s_voltage_limit_v);
+    /* Decoupling and back EMF feedforward. The voltage a rotating machine
+     * needs is not the voltage its current error asks for: the d axis has to
+     * supply -omega_e L iq, and the q axis omega_e L id plus the back EMF. The
+     * PI can reject both, and did until day 3, at the price of a d axis
+     * excursion during every speed transient. Feeding them forward takes the
+     * job off the integrator and leaves it for disturbances, which is what it
+     * is for. omega_e comes from the 2 kHz velocity estimate, the fastest speed
+     * this firmware has. */
+    const float omega_e_rad_s = (float)s_board->pole_pairs * s_status.omega_rad_s;
+    const float vd_ff_v = -omega_e_rad_s * s_board->motor_inductance_h * current_dq.q;
+    const float vq_ff_v = omega_e_rad_s * s_board->motor_inductance_h * current_dq.d +
+                          omega_e_rad_s * s_board->motor_flux_linkage_wb;
+    s_status.vd_ff_v = vd_ff_v;
+    s_status.vq_ff_v = vq_ff_v;
+
+    /* The PI now only has to cover what is left of the voltage budget. Limiting
+     * it to the full budget instead would let the integrator wind up around a
+     * voltage it never gets to apply, because the feedforward already spends
+     * part of it. */
+    const float remaining_d_v = (s_voltage_limit_v > firmware_abs(vd_ff_v))
+                                    ? s_voltage_limit_v - firmware_abs(vd_ff_v)
+                                    : 0.0f;
+    const float remaining_q_v = (s_voltage_limit_v > firmware_abs(vq_ff_v))
+                                    ? s_voltage_limit_v - firmware_abs(vq_ff_v)
+                                    : 0.0f;
+    pi_set_limit(&s_pi_d, remaining_d_v);
+    pi_set_limit(&s_pi_q, remaining_q_v);
     const foc_dq_t voltage_command =
-        foc_limit_magnitude((foc_dq_t){pi_step(&s_pi_d, 0.0f - current_dq.d),
-                                       pi_step(&s_pi_q, s_iq_reference_a - current_dq.q)},
+        foc_limit_magnitude((foc_dq_t){pi_step(&s_pi_d, 0.0f - current_dq.d) + vd_ff_v,
+                                       pi_step(&s_pi_q, s_iq_reference_a - current_dq.q) + vq_ff_v},
                             s_voltage_limit_v);
     s_status.vd_v = voltage_command.d;
     s_status.vq_v = voltage_command.q;
 
-    const foc_alphabeta_t voltage_ab = foc_inverse_park(voltage_command, rotor);
+    foc_alphabeta_t voltage_ab = foc_inverse_park(voltage_command, rotor);
+    if (s_dead_time_compensation) {
+        /* The currents here are the measured ones, not the references: the
+         * compensation is a function of which body diode is conducting, and the
+         * drive only learns that from the shunt. */
+        voltage_ab = foc_dead_time_compensate(voltage_ab, (foc_phase_t){ia_a, ib_a, ic_a}, bus_v,
+                                              s_board->dead_time_s, s_board->pwm_period_s,
+                                              FIRMWARE_DEAD_TIME_LINEAR_A);
+    }
     const foc_phase_t duty = foc_svpwm(voltage_ab, bus_v);
     (void)hal_pwm_set_duty(duty.a, duty.b, duty.c);
     hal_watchdog_kick();

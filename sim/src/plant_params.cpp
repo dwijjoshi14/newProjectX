@@ -16,4 +16,30 @@ PlantParams maxon_ec_i_40_70w_params() {
     return params;
 }
 
+InverterParams inverter_params_ideal() {
+    InverterParams inverter{};
+    inverter.instantaneous_switching = false;
+    inverter.dead_time_s = 0.0;
+    inverter.on_resistance_ohm = 0.0;
+    inverter.switching_crossover_s = 0.0;
+    inverter.bus_capacitance_f = 0.0;
+    inverter.bus_esr_ohm = 0.0;
+    inverter.bus_source_resistance_ohm = 0.0;
+    inverter.dead_time_linear_a = 0.0;
+    return inverter;
+}
+
+InverterParams inverter_params_realistic() {
+    InverterParams inverter{};
+    inverter.instantaneous_switching = true;
+    inverter.dead_time_s = 500.0e-9;          /* ASSUMED, parameters.md */
+    inverter.on_resistance_ohm = 3.0e-3;      /* ASSUMED, one device */
+    inverter.switching_crossover_s = 50.0e-9; /* ASSUMED, see parameters.md */
+    inverter.bus_capacitance_f = 100.0e-6;    /* ASSUMED, parameters.md */
+    inverter.bus_esr_ohm = 20.0e-3;           /* ASSUMED, parameters.md */
+    inverter.bus_source_resistance_ohm = 0.1; /* ASSUMED, supply and cabling */
+    inverter.dead_time_linear_a = 0.5;        /* ASSUMED, half the assumed ripple */
+    return inverter;
+}
+
 } // namespace tsim

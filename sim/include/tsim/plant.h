@@ -34,11 +34,29 @@ struct InverterCommand {
     bool bridge_enabled; /* false means the windings are open, bool */
 };
 
+/* The inverter, as opposed to the motor. An all zero instance with
+ * instantaneous_switching false is the average voltage source of rung 1, which
+ * is what makes day 1 and day 2 results reproducible after this struct exists.
+ * Values are cited or marked ASSUMED in docs/parameters.md. */
+struct InverterParams {
+    bool instantaneous_switching;     /* resolve the carrier, or apply the duty average */
+    double dead_time_s;               /* gate dead time per edge, s */
+    double on_resistance_ohm;         /* one conducting device, ohm */
+    double switching_crossover_s;     /* voltage and current overlap per transition, s */
+    double bus_capacitance_f;         /* DC link capacitance, 0 means a stiff bus */
+    double bus_esr_ohm;               /* capacitor ESR, ohm */
+    double bus_source_resistance_ohm; /* supply plus cabling into the capacitor, ohm */
+    double dead_time_linear_a;        /* current below which the dead time error fades, A */
+};
+
 struct ElectricalReadout {
     double ia_a;  /* phase A current, A, phase frame */
     double ib_a;  /* phase B current, A, phase frame */
     double ic_a;  /* phase C current, A, phase frame */
-    double bus_v; /* DC link, V, inverter frame */
+    double va_v;  /* phase A voltage the winding sees, common mode removed, V */
+    double vb_v;  /* phase B voltage the winding sees, common mode removed, V */
+    double vc_v;  /* phase C voltage the winding sees, common mode removed, V */
+    double bus_v; /* DC link at the inverter terminals, V, inverter frame */
 };
 
 struct MechanicalState {
@@ -53,6 +71,7 @@ struct EnergyAccount {
     double copper_j;     /* energy lost in the windings, J */
     double viscous_j;    /* energy lost to viscous friction, J */
     double mechanical_j; /* energy delivered to the rotor by the motor, J */
+    double switching_j;  /* energy lost in the transition of the devices, J */
 };
 
 struct Telemetry {

@@ -52,6 +52,12 @@ typedef struct {
     float bus_voltage_nominal_v;        /* DC link nominal, V */
     float dead_time_s;                  /* gate dead time, s */
     float pwm_period_s;                 /* switching period, s */
+    /* The motor the drive was commissioned against. A drive that decouples the
+     * cross coupling terms and feeds forward the back EMF has to know these, and
+     * a board file is where they belong: changing the motor is a config change,
+     * not a firmware change. */
+    float motor_inductance_h;    /* phase inductance, H, phase frame */
+    float motor_flux_linkage_wb; /* rotor flux linkage, Wb */
 } hal_board_config_t;
 
 /* Boot. Call once before anything else. Returns HAL_OK on success. */

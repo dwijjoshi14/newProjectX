@@ -25,10 +25,71 @@ struct SimHalState {
     uint32_t telemetry_drops = 0u;
     hal_tick_fn_t tick_fn = nullptr;
     bool timing_running = false;
+
+    /* Sensing chain, all off until sim_hal_set_imperfections(true). */
+    bool imperfections = false;
+    uint32_t rng = 0x1f123bb5u;
+    /* Per phase shunt gain error and amplifier offset from the mid scale
+     * bias. ASSUMED in docs/parameters.md, deterministic so a rerun matches. */
+    float gain_error[3] = {1.01f, 0.992f, 1.004f};
+    float offset_v[3] = {1.5e-3f, -2.0e-3f, 0.8e-3f};
 };
 
 /* One simulation, one HAL instance. The firmware is single instance too. */
 SimHalState s_state;
+
+/* xorshift32. Deterministic, in repo, and seeded so that a repeated run of the
+ * same binary sees the same noise. */
+uint32_t sim_rng_next(void) {
+    uint32_t x = s_state.rng;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    s_state.rng = x;
+    return x;
+}
+
+/* Uniform on [-0.5, 0.5). */
+float sim_uniform(void) {
+    return static_cast<float>(static_cast<std::int32_t>(sim_rng_next())) / 4294967296.0f;
+}
+
+/* Three uniforms summed, scaled to unit variance. Twice the sigma of one
+ * uniform is 0.5, so two is the factor that puts this at one. Good enough for
+ * encoder noise, and it needs no library. */
+float sim_gaussian(void) {
+    return (sim_uniform() + sim_uniform() + sim_uniform()) * 2.0f;
+}
+
+float sim_shunt_volts_per_amp(void) {
+    return s_state.board.shunt_resistance_ohm * s_state.board.current_amp_gain_v_per_v;
+}
+
+float sim_adc_lsb_volts(void) {
+    return s_state.board.adc_reference_v / static_cast<float>(s_state.board.adc_full_scale_counts);
+}
+
+/* True phase current through the shunt amplifier and the converter, A. The
+ * amplifier is biased at mid scale so that both current directions fit inside
+ * the converter's range; the firmware removes that bias at boot, which is what
+ * makes the boot calibration worth having. */
+float sim_measure_current(float true_a, uint32_t phase) {
+    if (!s_state.imperfections) {
+        return true_a;
+    }
+    const float bias_v = 0.5f * s_state.board.adc_reference_v;
+    const float volts = bias_v + true_a * sim_shunt_volts_per_amp() * s_state.gain_error[phase] +
+                        s_state.offset_v[phase];
+    float clamped_v = volts;
+    if (clamped_v < 0.0f) {
+        clamped_v = 0.0f;
+    }
+    if (clamped_v > s_state.board.adc_reference_v) {
+        clamped_v = s_state.board.adc_reference_v;
+    }
+    const float counts = std::nearbyint(clamped_v / sim_adc_lsb_volts());
+    return (counts * sim_adc_lsb_volts() - bias_v) / sim_shunt_volts_per_amp();
+}
 
 } // namespace
 
@@ -58,6 +119,20 @@ void sim_hal_attach(tsim::IPlant &plant) {
     s_state.board.bus_voltage_nominal_v = static_cast<float>(params.bus_voltage_v);
     s_state.board.dead_time_s = 5.0e-7f;  /* 500 ns, ASSUMED */
     s_state.board.pwm_period_s = 5.0e-5f; /* 1 / 20 kHz, s */
+    /* The drive is commissioned against the motor it drives, so the decoupling
+     * and feedforward terms use the same constants the plant does. */
+    s_state.board.motor_inductance_h = static_cast<float>(params.inductance_phase_h);
+    s_state.board.motor_flux_linkage_wb = static_cast<float>(params.flux_linkage_wb);
+}
+
+void sim_hal_set_imperfections(bool enable) {
+    s_state.imperfections = enable;
+    s_state.rng = 0x1f123bb5u;
+}
+
+void sim_hal_set_board_dead_time_s(float dead_time_s) {
+    s_state.board.dead_time_s = dead_time_s;
+    s_state.dead_time_ns = static_cast<uint32_t>(std::lround(dead_time_s * 1.0e9f));
 }
 
 void sim_hal_take_inverter_command(tsim::InverterCommand *out_command) {
@@ -89,10 +164,10 @@ hal_status_t hal_init(void) {
     }
     s_state.enabled = false;
     s_state.fault_bits = 0u;
-    /* No conversion has completed since init, so the boot offset calibration
-     * has nothing to average and leaves the offsets at zero. On a board the
-     * ADC free runs and this returns real samples. */
-    s_state.latched_valid = false;
+    /* The latch is left alone on purpose. On a board the ADC is free running
+     * before the bridge is enabled, so the boot offset calibration averages
+     * real conversions. sim_hal_attach clears the latch for a fresh run, so the
+     * harness still starts with no sample and calibrates to zero offsets. */
     return HAL_OK;
 }
 
@@ -132,9 +207,9 @@ hal_status_t hal_current_read(hal_current_sample_t *out) {
     if (out == nullptr) {
         return HAL_ERR_ARGUMENT;
     }
-    out->ia_a = static_cast<float>(s_state.latched.ia_a);
-    out->ib_a = static_cast<float>(s_state.latched.ib_a);
-    out->ic_a = static_cast<float>(s_state.latched.ic_a);
+    out->ia_a = sim_measure_current(static_cast<float>(s_state.latched.ia_a), 0u);
+    out->ib_a = sim_measure_current(static_cast<float>(s_state.latched.ib_a), 1u);
+    out->ic_a = sim_measure_current(static_cast<float>(s_state.latched.ic_a), 2u);
     out->timestamp_us = s_state.latched_timestamp_us;
     out->valid = s_state.latched_valid;
     return HAL_OK;
@@ -144,11 +219,20 @@ hal_status_t hal_encoder_read(hal_encoder_sample_t *out) {
     if (out == nullptr || s_state.plant == nullptr) {
         return HAL_ERR_ARGUMENT;
     }
-    const double theta_rotor_rad = s_state.plant->mechanical().theta_rotor_rad;
+    const tsim::MechanicalState mechanical = s_state.plant->mechanical();
     const double counts_per_rad =
         static_cast<double>(s_state.board.encoder_counts_per_rev) / tsim::kTwoPi;
-    out->position_counts =
-        static_cast<std::int64_t>(std::llround(theta_rotor_rad * counts_per_rad));
+    double theta_rotor_rad = mechanical.theta_rotor_rad;
+    double counts = theta_rotor_rad * counts_per_rad;
+    if (s_state.imperfections) {
+        /* Stated 1.5 us of decoder latency, applied as a shift of the angle,
+         * which is exact at constant speed. The noise is 0.05 deg RMS, which
+         * at 14 bits is 2.3 counts, so the encoder is not quiet enough to be
+         * treated as exact between samples. */
+        theta_rotor_rad -= mechanical.omega_rotor_rad_s * 1.5e-6;
+        counts = theta_rotor_rad * counts_per_rad + 2.28 * sim_gaussian();
+    }
+    out->position_counts = static_cast<std::int64_t>(std::llround(counts));
     out->timestamp_us = static_cast<std::uint32_t>(s_state.time_us);
     out->index_seen = true;
     out->valid = true;
@@ -156,7 +240,15 @@ hal_status_t hal_encoder_read(hal_encoder_sample_t *out) {
 }
 
 float hal_bus_voltage_read_v(void) {
-    return static_cast<float>(s_state.latched.bus_v);
+    const float bus_v = static_cast<float>(s_state.latched.bus_v);
+    if (!s_state.imperfections) {
+        return bus_v;
+    }
+    /* A bus divider that puts 40 V across a 12 bit converter is 9.8 mV per
+     * count; 10 mV is the same thing rounded to a number a person can read. */
+    const float span_v = 40.0f;
+    const float lsb_v = span_v / static_cast<float>(s_state.board.adc_full_scale_counts);
+    return std::nearbyint(bus_v / lsb_v) * lsb_v;
 }
 
 float hal_temperature_read_c(void) {
