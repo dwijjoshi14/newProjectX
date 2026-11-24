@@ -6,3 +6,9 @@ target_link_libraries(tsim_sim_hal PUBLIC tsim_firmware PRIVATE tsim_sim tsim_wa
 
 add_executable(tsim_harness src/main.cpp)
 target_link_libraries(tsim_harness PRIVATE tsim_sim_hal tsim_sim tsim_firmware tsim_warnings)
+
+# Opens the loop and records one switching period at 1 us, for the sampling
+# instant figure. Needs the firmware to settle the current first, and nothing
+# else.
+add_executable(tsim_sample_probe src/sample_probe.cpp)
+target_link_libraries(tsim_sample_probe PRIVATE tsim_sim_hal tsim_sim tsim_firmware tsim_warnings)
