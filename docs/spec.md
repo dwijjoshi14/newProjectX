@@ -61,9 +61,8 @@ can lag wall time and the lag is logged.
 | Day | Work | Artefact at the end |
 |---|---|---|
 | 1 | Scaffolding, hal.h, portable target, boundary and size gates, ideal plant, deterministic harness | Repo that builds and tests on a clean clone |
-| 2 | done. Clarke, Park, SVPWM, current and speed loops, validation against analytic plant response | Closed loop single motor, speed and current plot |
 | 2 | Clarke, Park, SVPWM, current and speed loops, validation against analytic plant response | Closed loop single motor, speed and current plot |
-| 3 | Real inverter: dead time, Ron, switching loss, bus ripple, compensation; sensing chain | Dead time THD figure, sampling instant figure |
+| 3 | done. Real inverter: dead time, Ron, switching loss, bus ripple, compensation; sensing chain | Dead time THD figure, sampling instant figure |
 | 4 | Mechanics and load: friction, backlash, two mass, hand, wall; velocity and position cascade; impedance control | Bode plot from swept sine, bandwidth and margin |
 | 5 | Thermal, efficiency map, network delay, second joint, bilateral control, passivity observer | Stability boundary, derating curve, efficiency map |
 | 6 | Real time harness, jitter and WCET, twin back end and front end | Live twin with instability demo, timing report |
@@ -146,6 +145,87 @@ they matter:
   rather than tuning. Day 4 puts a handle on it.
 - Saturation, cogging, Coulomb friction, backlash and switching remain
   unmodelled, as listed in `docs/model-limits.md`.
+
+## Day 3 decisions
+
+- **The switching plant is a second class, not a mode of the first.** The ideal
+  plant stays exactly as it was, so day 1 and day 2 results remain reproducible
+  at their commits, and the harness selects between them. The price of two
+  implementations of the same electrical equations is that they can drift, so
+  `the_switching_plant_reduces_to_the_average_model` runs both and compares
+  them sample by sample with the inverter set to ideal. It found a 1e-8
+  relative difference, which is float rounding in the average plant's neutral
+  calculation, and that is now written down rather than tolerated silently.
+- **The carrier is resolved at the plant step, with the edge placed inside the
+  step rather than snapped to it.** A 1 MHz plant cannot put an edge on a finer
+  grid than 1 us, and 1 us of a 50 us period is 2 percent of the duty, which is
+  0.72 V at 36 V. The dead time being studied is 0.36 V. Averaging the fraction
+  of each step a leg is high costs one min and one max per leg and brings the
+  quantisation error to nothing. The current ripple is then piecewise linear at
+  1 us, which is the honest limit of the step.
+- **Dead time is the standard average voltage error per leg**, signed by the
+  phase current and faded linearly below 0.5 A. Fading is not cosmetic: with
+  1.76 A peak to peak of ripple, the current crosses zero inside every period
+  near a zero crossing of the fundamental, so a hard sign would add the
+  distortion it is supposed to remove.
+- **Switching loss is the overlap triangle, not a fixed energy per event.** Day
+  1 recorded 20 uJ per device transition, which cannot be right because it does
+  not scale with current, and the day 3 energy account showed it burning 4.8 W
+  while the motor delivered 10 W. Replaced with a 50 ns crossover, which is the
+  same model in the form that has the current in it: half of bus times current
+  times the crossover, four device events per leg per period. The correction is
+  in the bring-up log, and the parameter is still ASSUMED.
+- **The link is a capacitor, an ESR and a source resistance**, and the converter
+  samples its terminal voltage at the window centre like everything else. Bus
+  ripple is therefore a result and not a formula, and the modulator sees
+  whatever the link happens to be at that instant.
+- **The sensing chain is opt-in in the HAL and on by default in the harness.**
+  Tests that are about the controller keep it off so that they measure the
+  controller. The distortion study turns it off too, and runs again with it on,
+  because at 30 rad/s the encoder quantisation is a bigger distortion source
+  than the inverter and hiding that would be a lie of omission.
+- **Dead time compensation is applied after the dq magnitude limit, in the
+  phase frame, with the common mode removed.** The correction on alpha is
+  0.48 V for a 0.36 V per leg error, and the difference is the neutral shift. A
+  compensator that added the three corrections without removing their mean
+  would push its own neutral around and call it a fix.
+- **Feedforward uses the 2 kHz velocity estimate, and the PI limits are reduced
+  by the feedforward term.** The first keeps the implementation honest, because
+  there is no faster speed signal, and it is the reason the load dip does not
+  improve with feedforward. The second keeps anti-windup meaningful now that
+  the feedforward spends part of the voltage budget before the PI gets it.
+- **The motor's inductance and flux linkage are board config, not firmware
+  constants.** A drive that decouples has to know its motor, and changing the
+  motor should be a config change. The values come from the datasheet
+  derivation in `docs/parameters.md` through the HAL, not from the plant.
+- **Day 2 numbers are pinned to their commit.** The control path changed, so
+  they are not reproduced at HEAD and the day 3 table says so, with the
+  difference attributed rather than smoothed over.
+
+## Day 3 status and what was cut
+
+One motor, closed loop, driving a switching inverter with dead time, device
+resistance, transition loss, a link that moves and a quantising sensor chain.
+The firmware compensates dead time and feeds forward cross coupling and back
+EMF. Cut or deferred, in the order they matter:
+
+- No observer. The velocity estimate is still a ten tick encoder difference, so
+  at 30 rad/s it is quantised to 2.4 percent of its own value and noisy to 5
+  percent once the sensing chain is on. That, not the inverter, sets the
+  distortion floor in the low speed result.
+- No dead time asymmetry, which is what turns dead time into a DC current
+  offset. No body diode forward drop either, so freewheeling is lossless and
+  the energy the dead time removes shows up as a voltage error only.
+- No overmodulation, no field weakening, no six step. The limit is still the
+  circle at 95 percent of bus / sqrt(3).
+- No thermal limit and no thermal model. The sampling probe runs 20 A on a
+  clamped rotor, seven times continuous, and nothing objects.
+- No anti-alias filter and no sampling jitter, so the converter sees the
+  window centre exactly and the ripple aliases to nothing.
+- No DC link protection: a back driven motor raises the bus in this model and
+  nothing stops it, which matters for a haptic joint and not yet for this one.
+- The transition loss parameter is ASSUMED with no device selected, so the
+  efficiency number in `docs/results.md` is an estimate with a wide bar.
 
 ## Method notes
 

@@ -143,6 +143,85 @@ which is what the check asks for, rather than disabling the check. Everything
 else in the new code passed 18.1.8 with warnings as errors on the firmware, sim
 and harness translation units.
 
+## 2026-11-24, day 3
+
+**Entry 21, the modulator was coarser than the fault it was measuring.** The
+first distortion run reported about 6 percent THD in every case, and the dead
+time compensation made it slightly worse. The cause was not the compensation:
+a 1 us plant step cannot place a PWM edge more finely than 1 us, which over a
+50 us period is 2 percent of the duty, and at 36 V that is 0.72 V. The dead
+time error being studied is 0.36 V. The model was measuring its own grid. Fixed
+by computing the fraction of each step a leg is high instead of snapping the
+edge to the step. The same run then gave 1.2 percent uncompensated and 0.3
+percent compensated, and the fifth harmonic fell by 94 percent. Nothing about
+the firmware changed, which is the point: the instrument was wrong, not the
+thing being instrumented.
+
+**Entry 22, the harness logged the wrong current.** `ia_a` in the CSV was the
+plant's current at the end of the window, not the sample the converter latched
+at the centre. At 20 kHz those differ by half the ripple, so a distortion figure
+drawn from that column would report switching ripple as controller behaviour.
+The harness now logs the measured current and the plant current side by side,
+and the distortion analysis uses the measured one because that is what the
+firmware acted on.
+
+**Entry 23, the switching loss assumption could not be right.** Day 1 recorded
+20 uJ per device transition. The day 3 energy account showed the inverter
+drawing 3.19 J from the link to deliver 1.64 J of mechanical work, with 1.44 J
+in transitions: 4.8 W of switching loss at a 1.1 A phase current. A fixed
+energy per event implies a 550 ns crossover at 2 A, which is not a device, and
+it also cannot be right at 20 A because it does not scale with current. Replaced
+with the overlap triangle and a 50 ns crossover, which is the same model with
+the current in it. The same run now loses 0.027 J to transitions. This is a
+correction to the parameter table, not a tuning change, and the parameter is
+still assumed.
+
+**Entry 24, the dead time correction is not 0.36 V.** The obvious implementation
+adds bus times dead time over period to each phase, which is 0.36 V. Run through
+the transform it moves alpha by 0.48 V, because three corrections that do not
+sum to zero move the neutral, and the winding only sees the differential part.
+The first version of the test asserted 0.36 and failed. The function now removes
+the mean of the three corrections before transforming back, and the test asserts
+0.48 with the arithmetic in the comment.
+
+**Entry 25, the reducing case test found a float sum.** The new switching plant
+must reproduce the average plant exactly when its inverter is ideal, and it did
+not: 1.9e-7 A on a 9 A current. The cause is that the average plant adds three
+float duty ratios in float and the switching plant adds three double voltages.
+That is 1e-8 relative in the neutral offset and harmless, so it is documented
+in the test rather than papered over by changing day 2 results in their last
+bits. A test that fails by a nanoamp and says why is worth more than one that
+passes by luck.
+
+**Entry 26, the drive booted with an uncalibrated shunt.** The firmware averages
+the latched sample at boot to find its current offsets, and `hal_init` was
+clearing the latch, so on the host that loop never saw a sample and the offsets
+stayed at zero. With the sensing chain on, that is a 1.5 mV amplifier offset,
+which is 0.06 A of current error the loop then has to live with, and it showed
+up as 0.047 A of steady d axis current. On a board the ADC is free running
+before the bridge is enabled. Fixed by leaving the latch alone in `hal_init`
+(attaching a plant still clears it, so a fresh run starts empty) and by having
+the harness publish the first conversion, which is the true zero current,
+before boot. The peak d axis error at 200 rad/s on the ideal plant fell from
+0.057 A to 0.025 A.
+
+**Entry 27, anti-windup had to learn about feedforward.** The current PI clips
+its integral at the voltage limit. Once the feedforward spends 6.3 V of a 19.7 V
+budget at 200 rad/s, a PI limited to the full 19.7 V winds up around voltage it
+never gets to apply, and unwinds slowly after the transient. The PI limit is now
+the remaining budget, and it is floored at zero rather than going negative when
+the feedforward alone exceeds the limit.
+
+**Entry 28, a 30 rad/s run would not hold 30 rad/s.** With the sensing chain on,
+the dead time scenario settled at 30.6 rad/s against a 29.92 reference. The
+cause is the velocity estimate: at 30 rad/s the rotor moves 42 encoder counts
+per 0.5 ms window, so one count is 2.4 percent of the speed, and the 2.3 count
+encoder noise makes the difference over ten ticks about 5 percent. The loop is
+chasing a number that moves by more than the error it is correcting. Rather
+than tune around it, the distortion result is quoted with the chain off and
+again with it on, and the second number is labelled as an encoder floor. An
+observer is the fix and it is not on the day 3 list.
+
 ## Template for later entries
 
 ```

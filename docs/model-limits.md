@@ -3,18 +3,46 @@
 What this model does not capture. Every item here is a claim that is not being
 made, which is the point of the document.
 
-Status: day 2. The plant is still the ideal one, so most of the day 1 list
-stands. What changed is that a controller now runs against it, which puts a few
-of the gaps on the control path where they cost something.
+Status: day 3. The inverter switches now, the link moves, and the sensing chain
+is in the loop. Most of the day 2 list is therefore gone, and what replaced it
+is a longer list of things that a switching model still does not say.
 
-## Not modelled at all, as of day 2
+## What day 3 added, and what it still does not say
 
-- Switching. The inverter is an average voltage source. No PWM ripple, no dead
-  time, no conduction or switching loss, no bus ripple. The modulator's duty
-  ratios are exact, so the 1.76 A peak to peak ripple that
-  `docs/parameters.md` predicts does not appear anywhere in these results.
-- Sensing error. Currents are exact doubles. The encoder quantises to 14 bits
-  and has no latency and no noise.
+- **Switching.** The carrier is resolved at the 1 MHz plant step, with the
+  fraction of each step a leg is high computed analytically rather than snapped
+  to the step, because a 1 us grid is a 2 percent duty error over a 50 us
+  period and that is 0.72 V at 36 V. The current ripple is therefore piecewise
+  linear at 1 us and not continuous through the edge. Ripple amplitude and
+  timing are right; the corner of each triangle is one step wide.
+- **Dead time.** Modelled as the standard average voltage error per leg, signed
+  by the phase current and faded linearly below 0.5 A. It says nothing about
+  the dead time asymmetry that a real driver has, which is what turns dead time
+  into a DC offset in the current rather than only distortion. A 40 ns
+  asymmetry at 36 V is 0.03 V, or 0.1 A at this winding, and it is not here.
+- **Conduction loss.** One device of on resistance in series with each leg, and
+  no body diode forward drop. Freewheeling during the dead interval is therefore
+  lossless in the model, so the energy the dead time removes appears as a
+  voltage loss and not as a diode loss. Both are watts at these currents and
+  the totals differ by the diode drop times the current.
+- **Switching loss.** A triangular overlap of bus and current over a 50 ns
+  crossover. It ignores the current and voltage dependence of the real
+  transition, diode reverse recovery, and the output charge of the device.
+- **Sensing.** Shunt gain error, amplifier offset, 12 bit quantisation, 1.5 us
+  of encoder latency and 0.05 deg RMS of encoder noise. It does not model
+  drift with temperature, common mode rejection, sampling jitter, or the
+  aperture of the sample and hold. The converter is otherwise noiseless.
+- **The current measurement instant** is exact: the plant is sampled at the
+  window centre and no anti alias filter sits in front of the converter, so the
+  alias of the switching ripple into the current loop is not represented beyond
+  the sampling instant itself.
+- **The DC link** is a capacitor, an ESR and a source resistance. There is no
+  rectifier, no precharge, no regeneration limit and no bus overvoltage from
+  energy returned by the motor. A haptic joint that is back driven will raise
+  the bus in this model and nothing stops it.
+
+## Not modelled at all, as of day 3
+
 - Saturation. Inductance is constant against current.
 - Cogging. Torque is a pure function of q axis current and rotor angle through
   the back EMF only.
@@ -31,31 +59,32 @@ of the gaps on the control path where they cost something.
 - Back EMF and torque share one flux linkage constant. In reality the two
   differ slightly because of end effects and manufacturing tolerance.
 - Viscous friction is linear. Real bearings are not.
-- The current loop has no cross coupling or back EMF feedforward, so the d axis
-  PI earns its living rejecting the omega_e L iq term. Measured cost during a
-  200 rad/s transient: 0.071 A of d axis current, 2.6 percent of the continuous
-  rating. Day 3 adds the feedforward with the dead time compensation.
-- The modulator removes its own common mode, so the plant cannot tell minimum
+- The current loop now has d/q decoupling and back EMF feedforward, and both use
+  the 2 kHz velocity estimate, which lags by up to 0.5 ms and quantises to one
+  encoder count per update. Feedforward is only as good as that estimate, and
+  the day 3 transient results show it: the d axis error during a 200 rad/s step
+  fell from 0.071 A to 0.025 A, while the load dip grew from 27.5 to 29.7
+  rad/s. Neither number is a property of the joint.
+- The velocity estimate is a ten tick encoder difference divided by the nominal
+  period. Its resolution at 200 rad/s is 0.77 rad/s and at 30 rad/s it is 0.77
+  rad/s as well, because the count rate falls with the speed: at 30 rad/s the
+  estimate is quantised to 2.4 percent of its own value, and with the sensing
+  chain on, the 2.3 count encoder noise makes it 5 percent. That is why the
+  low speed distortion result is quoted with the sensing chain off and again
+  with it on, and why the floor of the second number is the encoder and not the
+  inverter. A joint meant to run this slowly needs an observer, which this
+  project does not have yet.
+- The modulation removes its own common mode, so the plant cannot tell minimum
   maximum injection from sine triangle modulation. On hardware the difference
   is 15 percent of linear range, and it is asserted in the transform tests
   rather than in the plant.
-- The voltage limit is 95 percent of bus / sqrt(3) with no dead time allowance.
-  A real inverter at 500 ns and 20 kHz loses 1 percent of the volt seconds, and
-  the compensation for it is day 3.
-- The velocity estimate is a ten tick encoder difference divided by the nominal
-  period, so it lags by up to half a millisecond and its resolution at 200 rad/s
-  is 0.77 rad/s. That quantisation is visible as the 2 kHz staircase in the q
-  current of the speed plot. It is real behaviour at the current loop rate, not
-  plotting noise.
+- The voltage limit is 95 percent of bus / sqrt(3), and the dead time
+  compensation is applied after it, so a compensated request near the limit
+  clips in the modulator instead of in the limiter.
 - The speed loop is measured with only the rotor's own inertia, 2.3e-6 kg m^2.
-  A 50 mNm load step therefore looks violent. The dip is a property of the
-  inertia and the pipeline delay, and day 4 changes it by two orders of
-  magnitude when the handle arrives. Do not quote the day 2 dip as a property
-  of the joint.
-- The plant step is a fixed forward Euler integrator. Day 1 said its
-  discretisation error was unquantified and scheduled a step halving test. That
-  test exists now: the error at 1 us is 1.8e-5 relative on an RL step at 2 ms,
-  and it halves with the step. The numbers are in `docs/results.md`.
+  Day 4 changes that by two orders of magnitude.
+- The plant step is a fixed forward Euler integrator with a measured error of
+  1.8e-5 relative on an RL step at 2 ms, halving with the step.
 
 ## Never captured, at any rung
 

@@ -4,8 +4,12 @@ How each model claim would be checked on real hardware, in order, with the
 instrument named. This exists so that no simulated result is ever defended with
 "it would probably match".
 
-Status: day 1. This is the plan, not a record of tests performed. Nothing here
-has been run on hardware, because there is no hardware.
+Status: day 3. This is the plan, not a record of tests performed. Nothing here
+has been run on hardware, because there is no hardware. Items 6 and 7 now have
+something to compare against, which is the point of having a model of them at
+all: the dead time measurement has a predicted distortion to beat, and the
+current sensor measurement has a predicted 32 mA quantisation step and a
+predicted gain and offset error to confirm or refute.
 
 ## Order of checks on a first article
 

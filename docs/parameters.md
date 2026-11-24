@@ -56,11 +56,17 @@ worthless:
 2. Kt in SI is 0.0461 N m/A. The speed constant in SI is 1 / (207 * 2 pi / 60) =
    0.0461 V s/rad. Agreement better than 0.1 percent.
 
-Note on the ripple figure: 1.76 A peak to peak is 64 percent of the 2.74 A
-continuous current. That is a real consequence of a 0.256 mH winding at 20 kHz,
-not a modelling choice. Drives for this class of motor typically switch at
-40 kHz or more. Switching frequency stays a parameter, default 20 kHz, and the
-rung 3 report states the ripple and the loss trade off rather than hiding it.
+Note on the ripple figure, corrected on day 3: 1.76 A peak to peak is 64
+percent of the 2.74 A continuous current, and it is a real consequence of a
+0.256 mH winding at 20 kHz rather than a modelling choice. It is also the
+ripple of one leg against the bus midpoint, which is the worst case and not
+what the winding carries when all three duty ratios are equal: three legs
+switching together produce no differential voltage and therefore no winding
+ripple at all. The switching plant reproduces both cases, and
+`tests/test_inverter.cpp` asserts the second one. Drives for this class of
+motor typically switch at 40 kHz or more. Switching frequency stays a
+parameter, default 20 kHz, and the rung 3 report states the ripple and the
+loss trade off rather than hiding it.
 
 ## ASSUMED parameters
 
@@ -74,10 +80,15 @@ parameter is a limit on what the model can claim.
 | saturation knee | inductance falls 20 percent at 2x continuous current | no saturation curve published |
 | Coulomb friction | 8 mNm | not published, typical for this size and bearings |
 | viscous friction | 1e-5 N m s/rad | not published, chosen so coast down is observable |
-| gate dead time | 500 ns, 40 ns asymmetry | typical for a 36 V half bridge, device not selected |
+| gate dead time | 500 ns, symmetric | typical for a 36 V half bridge, device not selected. The 40 ns asymmetry this table used to carry is not modelled, see docs/model-limits.md |
 | MOSFET on resistance | 3 mOhm | device not selected |
-| switching energy | 20 uJ per device per event | device not selected |
+| switching crossover time | 50 ns | voltage and current overlap at one transition, typical of a 36 V half bridge with a fast driver; device not selected |
+| dead time sign linearisation | 0.5 A | half the 1.76 A peak to peak leg ripple, the current below which the sign is not single valued inside one switching period |
 | bus capacitor | 100 uF, 20 mOhm ESR | not part of the drive model in rung 1 |
+| bus source resistance | 0.1 ohm | supply and cabling, not measured |
+| shunt gain error | 1 percent, one value per phase | board not designed |
+| shunt amplifier offset | 2 mV at the amplifier output | board not designed |
+| bus measurement span | 40 V over 12 bits, 9.8 mV per count | bus divider not designed |
 | shunt resistance | 0.5 mOhm | board not designed |
 | shunt amplifier gain | 50 V/V | board not designed |
 | ADC | 12 bit, 3.3 V reference, 4095 counts | STM32G4 class converter |
