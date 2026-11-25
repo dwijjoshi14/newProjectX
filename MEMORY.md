@@ -55,6 +55,11 @@ Durable decisions and corrections. Newest last.
   free running before the bridge is enabled. Without it the drive ran with a
   1.5 mV amplifier offset, which is 0.06 A, and it showed up as 0.047 A of d
   axis current.
+- 2026-11-25 cppcheck resolves again, as cppcheck-wheel 1.5.3 carrying 2.22.0,
+  so the day 3 note that static analysis is ci only is out of date. The ci
+  runner installs 2.19.0 from apt. Running the same command locally found the
+  one finding ci reported and no others: a raw find loop in the sweep schedule,
+  which is a std::find_if now. Run it before pushing, not after.
 - 2026-11-25 the ci format gate is clang-format 21.1.6, because ubuntu-latest
   moved to 26.04 and apt now installs 21.1.6 there. The sandbox venv pins the
   same version, since 18 and 23 each disagree with 21 about how to lay out one
