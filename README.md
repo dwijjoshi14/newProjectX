@@ -4,31 +4,33 @@ A switching level digital twin of a haptic robot joint, with field oriented
 control firmware running inside it unmodified. No hardware, no cloud, one
 machine.
 
-**Status: day 3 of 7. One motor is closed loop in current and in speed, driving
-a switching inverter with dead time, a DC link that moves and a quantising
-sensing chain.** There is no load, no second joint and no thermal model yet, so
-this is a single drive on a switching plant, not a twin. Every number in this
-repository is simulated, and the figures say so on their face.
+**Status: day 4 of 7. One motor drives a two mass joint through a steel shaft
+with backlash, with a hand and a wall on the far side, in position and in
+impedance.** The firmware is the same unmodified FOC code, now with a position
+cascade and a 20 kHz impedance mode, and it commissions its own loop gains from
+the plant it is attached to and the encoder it is reading. There is no second
+joint, no cable and no thermal model yet. Every number in this repository is
+simulated, and the figures say so on their face.
 
-![Dead time distortion and compensation, simulated, commit 41433a1](docs/figures/day3_dead_time.png)
+![Position loop frequency response, simulated](docs/figures/day4_position_bode.png)
 
-500 ns of gate dead time at 20 kHz makes 1.66 percent current distortion on a
-1.96 A operating point, with a fifth harmonic at 30 mA. The firmware's
-compensation brings that to 0.27 percent, which is within 0.06 of the same
-drive with no dead time at all. The lower panel is the current with its
-fundamental removed, so the notch and its absence are visible at the size they
-actually are.
+The same handle, the same shaft and the same gains rule, measured twice: the
+position loop closes at 0.81 Hz with the 0.05 deg encoder the parameter table
+assumed and at 6.62 Hz with a 0.01 deg one. The drive derates its own crossover
+to where the velocity noise alone would command a tenth of continuous current,
+so the encoder is what limits this joint and not the mechanics: the anti
+resonance would allow 322.7 rad/s and the sensor allows 33.6.
 
 ## What exists
 
 | Path | What it is |
 |---|---|
-| `firmware/` | C11. Clarke, Park, space vector modulation, a PI current loop at 20 kHz, a PI speed loop at 2 kHz, d/q decoupling and back EMF feedforward, gate dead time compensation, boot offset calibration. Includes only its own headers, `hal.h` and three standard headers. Links no libm. |
+| `firmware/` | C11. Clarke, Park, space vector modulation, a PI current loop at 20 kHz, a PI speed loop at 2 kHz, a position cascade at 1 kHz, a 20 kHz impedance mode, d/q decoupling and back EMF feedforward, gate dead time compensation, self commissioning from the board config, boot offset calibration. Includes only its own headers, `hal.h` and three standard headers. Links no libm. |
 | `firmware_portable` | Compile only target, `-ffreestanding -Werror -Wdouble-promotion`, 8271 bytes of `.text` and `.data` against a 16384 byte budget. |
-| `sim/` | C++20. Two plants. `IdealPlant` is the average voltage source of day 1 and 2. `SwitchingPlant` resolves the carrier at 1 us, signs the dead time error by phase current, puts one device of on resistance in each leg, counts transition energy and integrates a 100 uF link with ESR behind a source resistance. A test asserts the second reduces to the first. |
-| `harness/` | C++20. The only thing that owns time. One control window function shared by the harness and the closed loop tests. Three scenarios (`speed_step`, `current_step`, `dead_time`) with switches for plant, dead time, compensation and sensing chain, plus `tsim_sample_probe`, which holds a duty and records one switching period at 1 us. |
-| `tests/` | In repo assert framework, 35 cases in 6 ctest entries: plant and convergence, inverter physics, transforms and firmware, closed loop and sensing, deterministic repeat, firmware boundary, size budget. |
-| `tools/` | Boundary check, size check, determinism check, the day 2 and day 3 plots, a THD analyser, and an independent discrete model of the current loop. |
+| `sim/` | C++20. One `MechanicalSystem` (two masses, a torsion spring, backlash, Coulomb and viscous friction, a hand, a wall, and an energy account) shared by two plants. `IdealPlant` is the average voltage source of day 1 and 2. `SwitchingPlant` resolves the carrier at 1 us, signs the dead time error by phase current, puts one device of on resistance in each leg, counts transition energy and integrates a 100 uF link with ESR behind a source resistance. A test asserts the second reduces to the first, and another asserts the rigid mechanics reproduce the day 1 body bit for bit. |
+| `harness/` | C++20. The only thing that owns time. One control window function shared by the harness and the closed loop tests. Six scenarios (`speed_step`, `current_step`, `dead_time`, `swept_sine`, `wall_contact`, `backlash`) with switches for plant, load, mode, coupling, dead time, compensation, encoder noise and sensing chain, plus `tsim_sample_probe`, which holds a duty and records one switching period at 1 us. |
+| `tests/` | In repo assert framework, 46 cases in 6 ctest entries: plant and convergence, mechanics, inverter physics, transforms and firmware, closed loop and sensing, and one entry for determinism, the firmware boundary and the size budget. |
+| `tools/` | Boundary check, size check, determinism check, the day 2, 3 and 4 plots, a THD analyser, a stepped sine frequency response fit, and an independent discrete model of the current loop. |
 | `docs/` | `spec.md` (plan and decisions), `parameters.md` (every constant cited or marked ASSUMED), `results.md` (numbers with methods and commits), `bringup-log.md`, `model-limits.md`, `validation-plan.md`, `figures/`. |
 
 ## The numbers, briefly
@@ -42,6 +44,11 @@ actually are.
 | sampling at a switching edge | 224 mA off, 1.1 percent of 20 A | `docs/results.md` |
 | speed dip on a 50 mNm load step, switching plant | 15.8 percent, against 14.9 on the average plant | `docs/results.md` |
 | transition loss at 1.96 A | 0.27 W from an assumed 50 ns crossover | `docs/results.md` |
+| position loop -3 dB, hand, 0.05 deg encoder | 0.81 Hz, 80 deg of phase margin | `docs/results.md` |
+| same joint, 0.01 deg encoder | 6.62 Hz, 78 deg | `docs/results.md` |
+| same joint, rigid coupling | 40.6 Hz, 76 deg | `docs/results.md` |
+| rendered stiffness, 1 N m/rad commanded | 0.634 N m/rad at the handle, 63 percent | `docs/results.md` |
+| backlash, 1 degree | zero torque inside 8.73 mrad either side | `docs/results.md` |
 | current loop, 10 to 90 percent rise, 2 A step | 222 us | `docs/results.md`, commit a781608 |
 | plant integration error at 1 us | 1.8e-5 relative, halves with the step | `docs/results.md` |
 
@@ -70,6 +77,25 @@ ctest --preset asan --output-on-failure
 Requirements: a C11 and C++20 compiler, CMake 3.22 or newer, Ninja, and Python
 3 for the size check. The plotting tool additionally wants numpy and matplotlib
 (`requirements.txt`).
+
+To reproduce the day 4 figures:
+
+```sh
+./build/dev/harness/tsim_harness --scenario swept_sine --log-every 5 \
+  --out data/run_latest/day4_sweep.csv
+./build/dev/harness/tsim_harness --scenario swept_sine --encoder-noise-deg 0.01 --log-every 5 \
+  --out data/run_latest/day4_sweep_quiet.csv
+./build/dev/harness/tsim_harness --scenario swept_sine --load rigid --log-every 5 \
+  --out data/run_latest/day4_sweep_rigid.csv
+./build/dev/harness/tsim_harness --scenario wall_contact --out data/run_latest/day4_wall_stiff1.csv
+./build/dev/harness/tsim_harness --scenario wall_contact --stiffness 4 \
+  --out data/run_latest/day4_wall_stiff4.csv
+./build/dev/harness/tsim_harness --scenario backlash --encoder-noise-deg 0.01 \
+  --out data/run_latest/day4_backlash_0.csv
+./build/dev/harness/tsim_harness --scenario backlash --encoder-noise-deg 0.01 --backlash-deg 1 \
+  --out data/run_latest/day4_backlash_1deg.csv
+python3 tools/plot_day4.py --commit "$(git rev-parse --short HEAD)"
+```
 
 To reproduce the day 3 figures:
 
@@ -114,6 +140,10 @@ Every constant in this repo is either cited in `docs/parameters.md` or marked
 ASSUMED there. Every figure is labelled simulated and stamped with the commit
 that produced it. No simulated number is presented as measured. Where the model
 does not capture something, `docs/model-limits.md` says so, and each day ends
-with a note on what was cut. One day 1 parameter was corrected on day 3 rather
-than defended: the switching loss, which had been recorded in a form that could
-not scale with current. The bring-up log has the entry.
+with a note on what was cut. Two parameters have been corrected rather than
+defended: the switching loss on day 3, which had been recorded in a form that
+could not scale with current, and the coupling stiffness on day 4, which had
+been 0.9 N m/rad since day 1 with no arithmetic behind it and was capping the
+position loop at 3 Hz. The bring-up log has both entries. A number that was
+assumed and turns out to be the reason a result is bad is the most useful thing
+this repository can find, and finding it late is the cost of assuming early.

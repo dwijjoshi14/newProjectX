@@ -82,7 +82,36 @@ is a longer list of things that a switching model still does not say.
   compensation is applied after it, so a compensated request near the limit
   clips in the modulator instead of in the limiter.
 - The speed loop is measured with only the rotor's own inertia, 2.3e-6 kg m^2.
-  Day 4 changes that by two orders of magnitude.
+  Day 4 changes that by two orders of magnitude, and the loop gains with it,
+  which is why the day 4 numbers are the first ones that are about a joint and
+  not about a rotor.
+- The velocity estimate is not just quantised, it is what limits the day 4
+  loop. With a 0.05 deg encoder its noise is 2.5 rad/s, and the speed gain a
+  1.5e-4 handle needs turns that into the continuous current. The drive
+  commissions itself to stay below that, which is why the same mechanics close
+  at 0.81 Hz with that encoder and 6.62 Hz with a 0.01 deg one. Neither number
+  is a property of the joint; the second one is what the joint would do with a
+  sensor this project has not specified.
+- The joint has a 1 degree dead band at the handle, 8 mN m of shaft friction
+  over a 0.45 N m/rad hand, and it hunts inside it rather than settling. Every
+  static number on day 4 carries that band, and no gain removes it. Friction
+  compensation or a torque sensor would, and neither exists.
+- The coupling is a lumped torsion spring of 250 N m/rad. The shaft's own
+  bending and its higher modes are not modelled, and above the 1.67 kHz
+  resonance the two mass lump is not a description of anything.
+- Backlash is a dead zone between the two masses with no impact model, no
+  compliance on the teeth and no dependence on load direction beyond the gap
+  itself. The day 4 run rings at about 15 Hz crossing it and the model cannot
+  say whether the ring is the gap or the friction.
+- The hand is a linear spring and damper. A real hand has neuromuscular
+  dynamics, a changing grip, and a wrist and an arm behind it. Nothing in this
+  model would predict how a person rates the feel of the joint, and the day 4
+  impedance result should not be read as a feel prediction.
+- There is no gravity. Every static number on day 4 is a horizontal joint, and
+  a vertical one would need the load torque in the plant and in the controller.
+- There is no torque sensor, so the rendered stiffness is in series with the
+  shaft and the wall and comes out at 63 percent of the command at 1 N m/rad.
+  The model is right about this and it is the design that is short.
 - The plant step is a fixed forward Euler integrator with a measured error of
   1.8e-5 relative on an RL step at 2 ms, halving with the step.
 

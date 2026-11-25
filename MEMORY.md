@@ -54,3 +54,31 @@ Durable decisions and corrections. Newest last.
   free running before the bridge is enabled. Without it the drive ran with a
   1.5 mV amplifier offset, which is 0.06 A, and it showed up as 0.047 A of d
   axis current.
+- 2026-11-25 day 4. Mechanics is one `MechanicalSystem` shared by both plants,
+  because two plants disagreeing about inertia is the bug this whole project is
+  built to avoid. The rigid configuration reproduces the day 1 body bit for bit
+  and a test asserts it, so the refactor is checked rather than trusted.
+- 2026-11-25 the assumed 0.9 N m/rad coupling was the bug of the day. A 6 mm
+  steel shaft 40 mm long is 250, its anti resonance with the handle is 205 Hz,
+  and the first version of the day closed the position loop at 12.7 Hz on top of
+  a 12.3 Hz anti resonance with |T| = -12.8 dB at 2 Hz and the current railed.
+  Assume a stiffness, cap the loop, and the sweep says so immediately.
+- 2026-11-25 the drive now commissions its own crossover from two limits: a
+  quarter of the anti resonance, and the crossover where velocity noise alone
+  would command a tenth of continuous current (J wc sigma_omega / Kt). Both are
+  exactly 1.0 for a bare rotor, so day 1 to day 3 numbers do not move. On the
+  hand the sensor limit binds by a factor of 9.6: 33.6 rad/s from 0.05 deg of
+  encoder noise against 322.7 from the mechanics.
+- 2026-11-25 the position loop is sensor limited, not mechanics limited. 0.81 Hz
+  with 0.05 deg of encoder noise and 6.62 Hz with 0.01 deg, same mechanics, same
+  gains rule. The velocity estimate is a ten tick difference, so 2.5 rad/s of
+  noise at 0.05 deg, and the gain the handle's inertia needs turns that into the
+  continuous current. An observer is the fix and it is not in the seven days.
+- 2026-11-25 there is a 1 degree dead band at the handle and no gain removes it:
+  8 mN m of shaft friction over a 0.45 N m/rad hand is 17.8 mrad. The joint
+  hunts inside the band instead of settling, which is why the step test asserts
+  two bands and why the results say hunt rather than settle.
+- 2026-11-25 no torque sensor means the rendered stiffness is 63 percent of the
+  command at 1 N m/rad and 30 percent at 4, and the series arithmetic with the
+  250 N m/rad shaft and the 1.8 N m/rad wall predicts both to better than 2
+  percent. Publish the ratio, not the command.

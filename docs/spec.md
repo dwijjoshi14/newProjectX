@@ -227,6 +227,88 @@ EMF. Cut or deferred, in the order they matter:
 - The transition loss parameter is ASSUMED with no device selected, so the
   efficiency number in `docs/results.md` is an estimate with a wide bar.
 
+## Day 4 decisions
+
+- **Mechanics is one class, shared by both plants.** Two plants that disagree
+  about the inertia of the joint is the most expensive kind of bug in a twin,
+  because every later result inherits the disagreement. `MechanicalSystem` owns
+  the two masses, the coupling, the backlash, the friction, the hand and the
+  wall, and both plants embed it. The rigid configuration must reproduce the
+  day 1 body bit for bit, and a test asserts it rather than trusting the
+  refactor.
+- **The coupling stiffness is derived, not assumed.** Day 1 carried 0.9 N m/rad
+  with no arithmetic behind it. A 6 mm steel shaft, 40 mm between clamp faces,
+  is GJ/L = 250 N m/rad. The assumed value was a rubber coupling, its anti
+  resonance was 12.3 Hz, and it capped the position loop at 3 Hz because the
+  loop was closing above it. The parameter is now in the derived table with the
+  expression, and the bring-up log has the failure.
+- **The drive commissions its own crossover, from both the plant and the
+  sensor.** Two limits, and the smaller wins: a quarter of the joint's anti
+  resonance, because that is the first thing that turns the loop's phase over,
+  and the crossover at which the velocity noise alone would command a tenth of
+  continuous current, J wc sigma_omega / Kt, because a drive that retunes for a
+  load without looking at its encoder tunes itself into its own noise. Both
+  limits are exactly 1.0 for a bare rotor, so day 1 to day 3 results are
+  unchanged, and that is asserted by the day 3 numbers staying where they were.
+- **The position loop is P at 1 kHz into the existing 2 kHz speed PI, with no
+  reference filter.** A 10 ms filter on the position output would put a 16 Hz
+  pole inside a 25 Hz cascade, which is the same mistake as day 2's filter at a
+  loop that was five times slower. The speed PI keeps running at 2 kHz on
+  whatever reference the position tick last wrote, so the inner loop is not
+  slowed to the outer one's rate.
+- **The position error is computed in int64 counts and converted once.** A
+  float angle loses the last counts after a few thousand turns of a multiturn
+  counter, and the error of a position loop is exactly the quantity that cannot
+  afford it.
+- **Impedance renders torque at 20 kHz, not at the speed loop's rate.** A
+  handle's impedance is the loop, and a spring evaluated every tenth tick feels
+  like a spring with a two millisecond delay in it. Torque is K e - D omega,
+  converted with Kt = 1.5 p lambda, clamped at stall current.
+- **The frequency response comes from a stepped sine, not a chirp.** A chirp
+  needs a model to fit and the point was to measure. Thirteen log spaced points
+  from 0.5 to 150 Hz, two cycles to settle and four to measure, with a column
+  in the CSV that marks the measurement window so the analysis cannot quietly
+  fit the settling. L is T / S from the closed loop transfer and the measured
+  sensitivity in the same run, so the phase margin is read off the run and not
+  off a model of it.
+- **The rendered impedance is reported as a ratio to the command.** There is no
+  torque sensor, so the spring the firmware renders is in series with the
+  joint's own compliance and the wall's. Commanding 1 N m/rad at the handle
+  produces 0.63, and the figure says so instead of presenting the command as
+  the result.
+
+## Day 4 status and what was cut
+
+One motor driving a two mass joint through a steel shaft with backlash, with a
+hand and a wall on the far side, in position and in impedance, measured by a
+stepped sine. The mechanics, the cascade and the impedance loop are in; the
+number that matters is that the position loop closes at 0.8 Hz with the encoder
+the parameter table assumed and at 6.6 Hz with a quiet one. Cut or deferred, in
+the order they matter:
+
+- No observer and no friction compensation. The joint hunts inside a one degree
+  friction band at the handle instead of standing still, and the loop's speed
+  limit is set by the velocity estimate rather than by the mechanics. Both are
+  the same missing piece, and it is the largest gap in the project so far.
+- No torque sensor, so the rendered stiffness is 63 percent of the command at
+  1 N m/rad and 30 percent at 4, and no gain fixes that. A joint sold as a
+  haptic display needs the sensor, or a stiffness high enough to cancel the
+  joint's own compliance, which is a different design.
+- Backlash is a dead zone between the two masses, with no impact model. The
+  joint rings at about 15 Hz as it crosses the gap and the model cannot say
+  whether that is the gap or the friction.
+- The hand is a linear spring and damper. A real hand has neuromuscular
+  dynamics, a grip that changes, and a wrist behind it. Nothing here would
+  predict how a person rates the feel.
+- No gravity. The joint is horizontal, so every static number in this day is a
+  horizontal one, and a vertical joint would need the load torque in the model
+  and in the controller.
+- No cable, no second joint, no delay. The bilateral case, which is what a twin
+  is for, is days 5 to 7.
+- The wall is a spring, so contact is compliant by construction. A rigid wall
+  would need an impulse solver and would make the stiffness result different
+  again.
+
 ## Method notes
 
 - Tests are written before the feature. The day 1 plant tests came before any

@@ -4,12 +4,15 @@ How each model claim would be checked on real hardware, in order, with the
 instrument named. This exists so that no simulated result is ever defended with
 "it would probably match".
 
-Status: day 3. This is the plan, not a record of tests performed. Nothing here
+Status: day 4. This is the plan, not a record of tests performed. Nothing here
 has been run on hardware, because there is no hardware. Items 6 and 7 now have
 something to compare against, which is the point of having a model of them at
 all: the dead time measurement has a predicted distortion to beat, and the
 current sensor measurement has a predicted 32 mA quantisation step and a
-predicted gain and offset error to confirm or refute.
+predicted gain and offset error to confirm or refute. Item 9 has gained the
+position loop, and item 10 is the one day 4 most needs: the 205 Hz anti
+resonance and the 250 N m/rad stiffness are derived from a shaft drawing and
+have never been near a real part.
 
 ## Order of checks on a first article
 
@@ -36,11 +39,19 @@ predicted gain and offset error to confirm or refute.
    thermocouple on the winding and on the housing, wait for steady state at
    three power levels. Fits the three node network.
 9. **Loop bandwidth and margin.** Swept sine on the q axis current reference
-   with a signal analyser or a captured scope record. This is the same
-   measurement the simulator produces, so the comparison is direct.
+   with a signal analyser or a captured scope record, then on the position
+   reference with the handle attached. This is the same measurement the
+   simulator produces, so the comparison is direct: 0.81 Hz and 6.62 Hz for the
+   two encoder specs, 40.6 Hz rigid, and a phase margin near 80 degrees in all
+   three. The position loop is the number to check first, because it is the one
+   that depends on a sensor spec this project has only assumed.
 10. **Friction and compliance.** Free decay from several speeds for Coulomb and
     viscous terms, and a hammer tap with an accelerometer for the coupling
-    resonance.
+    resonance. The predictions to beat are 8 mN m of Coulomb friction, a 205 Hz
+    anti resonance with the handle fitted, and 0.5 percent of critical damping
+    in the shaft. The friction number is the one that matters most: at 0.45 N
+    m/rad of hand it sets a 17.8 mrad dead band at the handle, and every static
+    day 4 result sits inside that band.
 11. **Bilateral stability boundary.** Two joints, a variable delay line and a
     variable gain, find the edge by sweep. Compare against the passivity
     prediction from the model.
@@ -51,6 +62,10 @@ predicted gain and offset error to confirm or refute.
 - Measured cogging above 3 percent of continuous torque.
 - Torque constant more than 5 percent away from the fitted flux linkage.
 - A stability edge more than 20 percent away from the passivity prediction.
+- Measured position bandwidth more than 30 percent below the 6.62 Hz the model
+  predicts for a 0.01 deg encoder, once such an encoder is on the joint. That
+  would send the sensor model back first, since it is the term the loop is
+  limited by.
 
 Any of those sends the model back for a parameter, not for a tuned fudge
 factor. The fudge factor is how these projects usually die.

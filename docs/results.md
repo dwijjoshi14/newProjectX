@@ -4,10 +4,104 @@ A spec sheet of simulated numbers, each with its method and the commit that
 produced it. No measured number appears in this file, because nothing has been
 measured. Every row can be regenerated from the commit beside it.
 
-Status: day 3 of 7. One motor, closed loop in current and in speed, now driving
-a switching inverter with dead time, a link that moves and a sensing chain in
-the loop. The firmware compensates dead time and feeds forward the cross
-coupling and back EMF.
+Status: day 4 of 7. One motor driving a two mass joint through a steel shaft
+with backlash, with a hand and a wall on the far side, in position and in
+impedance. The firmware compensates dead time, feeds forward the cross coupling
+and back EMF, and commissions its own loop gains from the plant and the sensor.
+
+## Day 4 results
+
+![Position loop frequency response, simulated](figures/day4_position_bode.png)
+
+Simulated, scenario `swept_sine`: hand attached (0.45 N m/rad spring, 0.02 N m
+s/rad), 250 N m/rad steel coupling with 2e-3 N m s/rad of damping, 8 mN m of
+Coulomb friction, switching plant, sensing chain on, 500 ns of dead time,
+0.1 rad peak from 0.5 to 150 Hz in thirteen log spaced points. Two cycles to
+settle, four to measure, and the measurement window is a column in the CSV so
+the analysis cannot fit the settling. T is the complex amplitude of the joint
+angle over the reference angle, both fitted at the frequency the harness
+generated. L is T / S, where S = 1 - T is the sensitivity, so the phase margin
+comes from the same run as the response and not from a model of the loop.
+
+| Case | -3 dB | loop crossover | phase margin | gain margin |
+|---|---|---|---|---|
+| hand, 0.05 deg encoder noise | 0.81 Hz | 0.68 Hz | 80.3 deg | not reached in 150 Hz |
+| hand, 0.01 deg encoder noise | 6.62 Hz | 5.42 Hz | 77.8 deg | not reached in 150 Hz |
+| rigid coupling | 40.60 Hz | 28.13 Hz | 75.9 deg | not reached in 150 Hz |
+
+The gain margin row says what happened rather than what was asked for: the
+phase of the hand's loop gain flattens near -140 degrees and only reaches -180
+above 150 Hz, so there is no crossing to read a margin off inside the swept
+band. It is reported as not reached, not as infinite.
+
+The two hand curves are the day's finding, and it is not a tuning result. The
+drive commissions a speed crossover from two limits and takes the smaller:
+a quarter of the joint's anti resonance (322.7 rad/s here, from 250 N m/rad over
+a 1.5e-4 handle) and the crossover at which the velocity noise alone would
+command a tenth of continuous current. The second limit depends only on the
+encoder:
+
+| Encoder noise | Velocity noise | Commissioned speed crossover | Position gain |
+|---|---|---|---|
+| 0.05 deg, 2.3 counts | 2.5 rad/s | 33.6 rad/s | 8.4 per second |
+| 0.01 deg, 0.5 counts | 0.50 rad/s | 168 rad/s | 52.8 per second |
+| none, rigid coupling | 0 | 322.7 rad/s | 80.6 per second |
+
+So the same mechanics close at 0.8 Hz with the encoder the parameter table
+assumed and at 6.6 Hz with one eight times quieter. The velocity estimate is a
+ten tick difference, so its noise is sqrt(2) sigma / 0.5 ms, and the speed gain
+the handle's inertia needs turns that into current: 2.5 rad/s times 1.06 A per
+rad/s is 2.7 A, which is the continuous rating. The first version of this day
+had a loop that railed at +-2.74 A and swung the load at +-20 rad/s, and that
+was the sensor, not the tuning.
+
+![Rendered impedance against a wall, simulated](figures/day4_impedance.png)
+
+Simulated, scenario `wall_contact`: a rendered spring of 1.0 and then 4.0 N m/rad
+pushing to 0.15 rad against a wall at 0.05 rad with 1.8 N m/rad of its own, 0.05
+N m s/rad of rendered damping, impedance mode at 20 kHz.
+
+| Commanded | Rendered at the handle | Torque for 100 mrad past the wall | Ratio | Series prediction |
+|---|---|---|---|---|
+| 1.0 N m/rad | 0.634 N m/rad | 63.4 mN m | 0.63 | 0.640 |
+| 4.0 N m/rad | 1.214 N m/rad | 121.4 mN m | 0.30 | 1.235 |
+
+The series prediction is 1 / (1/k_cmd + 1/250 + 1/1.8): the rendered spring is
+in series with the shaft and the wall, so the handle feels the command only
+when the command is soft against everything else. At 1 N m/rad the transmission
+costs 0.4 percent and the wall costs 36. At 4 N m/rad the ratio is 0.30 because
+the wall is softer than the command. There is no torque sensor and no loop
+around the contact, so this is what the drive can render, and the figure plots
+the ratio rather than the command.
+
+![Backlash lost motion, simulated](figures/day4_backlash.png)
+
+Simulated, scenario `backlash`: a 1 Hz triangle of 0.1 rad amplitude, hand on a
+0.01 deg encoder, once with a rigid coupling and once with 1 degree of backlash
+(17.45 mrad, 8.73 mrad either side of centre).
+
+| Backlash | Torque at zero relative angle | Largest coupling torque | Relative angle reached |
+|---|---|---|---|
+| 0 deg | +6.9 mN m | 161 mN m | 0.6 mrad |
+| 1 deg | +0.0 mN m | 1280 mN m | 13.8 mrad |
+
+The 6.9 mN m at zero relative angle in the rigid case is the friction offset,
+not a coupling term; the same run's largest relative angle is 0.6 mrad because a
+rigid joint has no lost motion to show. With 1 degree the coupling carries
+exactly nothing inside the gap and the joint rings at about 15 Hz as it crosses
+it, which is the gap exciting the two mass mode and not a controller problem.
+The rings stay inside the gap plus 5 mrad of deflection, and the peak torque of
+1.28 N m is 250 N m/rad times that 5 mrad.
+
+Two things qualify all of the above. The joint hunts inside its friction band:
+8 mN m over a 0.45 N m/rad hand is a 17.8 mrad dead band at the handle, and a
+step lands anywhere inside it and stays there. And the sweep is a 0.1 rad peak,
+so the low frequency points are measured at speeds where one encoder count is
+the dominant term; at 0.3 rad the 2 Hz point moves from -3.1 dB to -0.2 dB on
+the quiet encoder, and the figure keeps 0.1 rad because that is the amplitude a
+handle actually sees.
+
+## Dead time, and what compensation buys
 
 Every row below the day 3 heading comes from commit 41433a1. The day 2 rows
 further down are from commit a781608 and are kept as they were measured: the
@@ -182,6 +276,25 @@ three phase legs, whose pulses overlap, rather than one leg's pulse. The
 converter samples the bus at the window centre and the firmware uses that
 number for the modulator, so a 24 mV ripple is a 0.07 percent modulation error,
 which is why it does not show up anywhere else in these results.
+
+## Reproduce day 4
+
+```sh
+./build/dev/harness/tsim_harness --scenario swept_sine --log-every 5 \
+  --out data/run_latest/day4_sweep.csv
+./build/dev/harness/tsim_harness --scenario swept_sine --encoder-noise-deg 0.01 --log-every 5 \
+  --out data/run_latest/day4_sweep_quiet.csv
+./build/dev/harness/tsim_harness --scenario swept_sine --load rigid --log-every 5 \
+  --out data/run_latest/day4_sweep_rigid.csv
+./build/dev/harness/tsim_harness --scenario wall_contact --out data/run_latest/day4_wall_stiff1.csv
+./build/dev/harness/tsim_harness --scenario wall_contact --stiffness 4 \
+  --out data/run_latest/day4_wall_stiff4.csv
+./build/dev/harness/tsim_harness --scenario backlash --encoder-noise-deg 0.01 \
+  --out data/run_latest/day4_backlash_0.csv
+./build/dev/harness/tsim_harness --scenario backlash --encoder-noise-deg 0.01 --backlash-deg 1 \
+  --out data/run_latest/day4_backlash_1deg.csv
+python3 tools/plot_day4.py --commit "$(git rev-parse --short HEAD)"
+```
 
 ## Day 2 results, at commit a781608
 

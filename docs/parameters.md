@@ -47,6 +47,9 @@ marked NRND on maxon's site on the same date.
 | winding heat capacity | 11.0 J/K | 24.9 s / 2.27 K/W |
 | housing heat capacity | 125 J/K | 1020 s / 8.17 K/W |
 | switching ripple, 50 percent duty | 1.76 A peak to peak | V D (1-D) / (L f), f = 20 kHz |
+| coupling stiffness | 250 N m/rad | 6 mm steel shaft, 40 mm between clamp faces: G pi d^4 / (32 L), G = 79.3 GPa. Day 4 replaced an assumed 0.9 with this, because 0.9 is a rubber coupling, not a shaft, and it capped the position loop at 3 Hz |
+| coupling anti-resonance, hand attached | 205 Hz | sqrt(k / J_load), 250 / 1.5e-4 |
+| coupling resonance, rotor on one end | 1.67 kHz | sqrt(k (1/J_rotor + 1/J_load)) |
 
 Two cross checks, because a parameter table that disagrees with itself is
 worthless:
@@ -92,9 +95,8 @@ parameter is a limit on what the model can claim.
 | shunt resistance | 0.5 mOhm | board not designed |
 | shunt amplifier gain | 50 V/V | board not designed |
 | ADC | 12 bit, 3.3 V reference, 4095 counts | STM32G4 class converter |
-| encoder | 14 bit, 1.5 us latency, 0.05 deg RMS noise | resolution fixed by the brief, rest assumed |
-| coupling stiffness | 0.9 N m/rad | joint not designed, gives a resonance near 100 Hz |
-| coupling damping | 0.05 N m s/rad | joint not designed |
+| encoder | 14 bit, 1.5 us latency, 0.05 deg RMS noise | resolution fixed by the brief, rest assumed. 0.05 deg is a magnetic encoder's number: at 2.3 counts it makes the velocity estimate 2.5 rad/s noisy, and day 4 shows that costs a factor of eight in position bandwidth. docs/results.md runs the same joint at 0.01 deg, which is an optical part's number, and the difference is the finding |
+| coupling damping | 2e-3 N m s/rad | joint not designed. 0.5 percent of critical at the 205 Hz anti resonance, which is a bolted steel clamp and not a damped elastomer |
 | hand inertia | 1.5e-4 kg m2 | hand on a 30 mm knob |
 | hand spring and damping | 0.45 N m/rad, 0.02 N m s/rad | hand model, literature range |
 | wall stiffness | 1.8 N m/rad | rigid wall on a 30 mm knob |

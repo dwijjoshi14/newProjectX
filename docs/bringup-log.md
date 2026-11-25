@@ -222,6 +222,67 @@ than tune around it, the distortion result is quoted with the chain off and
 again with it on, and the second number is labelled as an encoder floor. An
 observer is the fix and it is not on the day 3 list.
 
+## 2026-11-25, day 4
+
+**Entry 29, the stiction term destroyed momentum.** The first mechanical system
+zeroed the relative velocity of the two bodies whenever the joint was inside
+the stiction band. That is what stiction does, but it has to be an impulse
+bounded by the friction cone, mu N dt, and not a discontinuous zeroing: the
+first version deleted the momentum of a joint coasting at 4 rad/s in a single
+step, and the energy test caught it as 2.4 mJ appearing out of nothing. The
+friction impulse is now clamped to mu N dt and the account has a column for it.
+Without that test the joint would have stopped dead on every reversal and
+every static result would have been wrong in the same direction.
+
+**Entry 30, the energy account was short by the spring.** The day 1 account
+balanced to 3 percent with the two mass path on, and the missing term was
+0.5 k theta_rel^2 stored in the coupling. Added as `elastic_j`. The residual is
+now 1e-9 relative on a 1 s run, which is float noise and not a physics gap.
+
+**Entry 31, a 0.9 N m/rad coupling cannot hold a handle.** The first sweep used
+the stiffness the parameter table carried, 0.9 N m/rad, which is a rubber
+coupling and not a shaft. With the hand on it, the anti resonance is at 12.3 Hz
+and the position loop was closing at 12.7 Hz, so the outer loop was asking the
+inner one to work on top of the resonance it was supposed to stay below. The
+result was not marginal: |T| was -12.8 dB at 2 Hz, iq_ref sat on the 2.74 A
+limit, the load swung +-20 rad/s and the joint stopped 27 mrad short of a 0.1
+rad step. Replaced the assumption with arithmetic, a 6 mm steel shaft 40 mm
+between clamp faces is 250 N m/rad, which puts the anti resonance at 205 Hz,
+and made the drive read the stiffness from the board config and commission its
+own crossover at a quarter of that. The assumed number was the bug, not the
+loop: it had been in the table since day 1 with no arithmetic behind it.
+
+**Entry 32, then it railed on its own encoder.** With 250 N m/rad the drive
+commissioned to 51 Hz and the sweep was still bad: -5.2 dB at 2 Hz, iq on the
+limit again, and the trace showed the velocity estimate swinging between -8 and
++8 rad/s while the joint moved at 1.3. The 0.05 deg encoder noise in the table
+is 2.3 counts, and a ten tick difference turns that into 2.5 rad/s. The speed
+gain the handle's inertia needs, J wc / Kt, turns 2.5 rad/s into 2.7 A, which is
+the continuous current. The loop was not badly tuned, it was driving the bridge
+with its sensor noise. Fixed by making the commissioning read the encoder: the
+noise current is J wc sigma_omega / Kt, holding it to a tenth of continuous
+gives 33.6 rad/s for this board, and the position loop follows it down to 8.4
+per second. The same joint with 0.01 deg of encoder noise commissions to 168
+rad/s and closes at 6.6 Hz, which is the whole point of the day 4 result.
+
+**Entry 33, the friction band is a degree wide and the test wanted a point.**
+The step test asserted the joint lands within one friction band of the
+reference, 8 mN m over 0.45 N m/rad, which is 17.8 mrad. It lands at 19.9 mrad
+and holds there, and the trace shows why: the loop hunts inside the band rather
+than settling, because the spring force only has to be within the friction cone
+for the joint to stand still. Widening the assertion to two bands is not the
+fix on its own, so the comment says what the numbers mean and `docs/results.md`
+reports the hunt. The joint has a one degree dead band at the handle and no
+amount of gain removes it; friction compensation or a torque sensor would.
+
+**Entry 34, the harness accepted a flag and ignored it.** `--coupling-stiffness`
+parsed, appeared in the summary line, and never reached the plant, because
+`mechanics_for` returned the preset directly and the override was written
+against the wrong variable. A flag that changes the banner and not the physics
+is worse than no flag, because a run that looks like a sweep of stiffness is
+not one. Applied now, and the summary line prints the coupling the plant is
+actually using rather than the one the preset asked for.
+
 ## Template for later entries
 
 ```
