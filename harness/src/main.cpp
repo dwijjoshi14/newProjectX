@@ -272,17 +272,17 @@ Reference position_reference_at(const ScenarioConfig &config, std::uint64_t tick
     const double time_s = static_cast<double>(tick) * tsim::kControlPeriodS;
     switch (config.scenario) {
     case Scenario::kSweptSine: {
-        for (const SweepPoint &point : schedule) {
-            if (tick < point.end_tick) {
-                const double phase =
-                    tsim::kTwoPi * point.frequency_hz *
-                    (static_cast<double>(tick - point.start_tick) * tsim::kControlPeriodS);
-                reference.position_rad =
-                    static_cast<float>(config.sweep_amplitude_rad * std::sin(phase));
-                reference.sweep_hz = point.frequency_hz;
-                reference.measuring = (tick >= point.measure_start_tick) ? 1 : 0;
-                break;
-            }
+        const auto point =
+            std::find_if(schedule.begin(), schedule.end(),
+                         [tick](const SweepPoint &candidate) { return tick < candidate.end_tick; });
+        if (point != schedule.end()) {
+            const double phase =
+                tsim::kTwoPi * point->frequency_hz *
+                (static_cast<double>(tick - point->start_tick) * tsim::kControlPeriodS);
+            reference.position_rad =
+                static_cast<float>(config.sweep_amplitude_rad * std::sin(phase));
+            reference.sweep_hz = point->frequency_hz;
+            reference.measuring = (tick >= point->measure_start_tick) ? 1 : 0;
         }
         break;
     }
