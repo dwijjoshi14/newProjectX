@@ -38,6 +38,13 @@ void sim_hal_set_imperfections(bool enable);
  * the mismatch rather than the compensation. */
 void sim_hal_set_board_dead_time_s(float dead_time_s);
 
+/* Encoder noise, rad RMS, as measured and as reported to the drive. The plant
+ * and the board config are set together, because the drive commissions its own
+ * bandwidth from the number it is given and a study that changes only the plant
+ * is measuring the mismatch. Default is the 0.05 deg of docs/parameters.md, and
+ * zero turns the noise off without touching the rest of the sensing chain. */
+void sim_hal_set_encoder_noise_rad(float noise_rad);
+
 /* Telemetry frames refused by the ring buffer, count. */
 std::uint32_t sim_hal_telemetry_drops();
 

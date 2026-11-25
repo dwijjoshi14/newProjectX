@@ -26,6 +26,11 @@ struct SimHalState {
     hal_tick_fn_t tick_fn = nullptr;
     bool timing_running = false;
 
+    /* Encoder noise, rad RMS. ASSUMED at 0.05 deg in docs/parameters.md, which
+     * at 14 bits is 2.3 counts: the velocity estimate is a ten tick difference,
+     * so it arrives with 2.5 rad/s of noise on it. */
+    float encoder_noise_rad = 8.7266e-4f;
+
     /* Sensing chain, all off until sim_hal_set_imperfections(true). */
     bool imperfections = false;
     uint32_t rng = 0x1f123bb5u;
@@ -123,11 +128,31 @@ void sim_hal_attach(tsim::IPlant &plant) {
      * and feedforward terms use the same constants the plant does. */
     s_state.board.motor_inductance_h = static_cast<float>(params.inductance_phase_h);
     s_state.board.motor_flux_linkage_wb = static_cast<float>(params.flux_linkage_wb);
+    /* Commissioned against the joint it drives, which includes what hangs off
+     * the coupling. A compliant coupling only reflects the load below its own
+     * resonance, which is the band the speed loop is designed in. */
+    s_state.board.motor_inertia_kg_m2 = static_cast<float>(params.inertia_kg_m2);
+    s_state.board.reflected_load_inertia_kg_m2 =
+        static_cast<float>(params.mechanics.load_inertia_kg_m2);
+    s_state.board.coupling_stiffness_nm_per_rad =
+        static_cast<float>(params.mechanics.coupling_stiffness_nm_per_rad);
+    /* Off until the chain is switched on, so a board that is never told about
+     * its sensor does not commission for one. */
+    s_state.board.encoder_noise_rad = 0.0f;
 }
 
 void sim_hal_set_imperfections(bool enable) {
     s_state.imperfections = enable;
     s_state.rng = 0x1f123bb5u;
+    /* A chain that is off has no noise, and the drive commissions from the
+     * number it is told. Leaving the noise in the board config while the plant
+     * is clean would make the drive derate for a sensor it does not have. */
+    s_state.board.encoder_noise_rad = enable ? s_state.encoder_noise_rad : 0.0f;
+}
+
+void sim_hal_set_encoder_noise_rad(float noise_rad) {
+    s_state.encoder_noise_rad = (noise_rad > 0.0f) ? noise_rad : 0.0f;
+    s_state.board.encoder_noise_rad = s_state.encoder_noise_rad;
 }
 
 void sim_hal_set_board_dead_time_s(float dead_time_s) {
@@ -230,7 +255,9 @@ hal_status_t hal_encoder_read(hal_encoder_sample_t *out) {
          * at 14 bits is 2.3 counts, so the encoder is not quiet enough to be
          * treated as exact between samples. */
         theta_rotor_rad -= mechanical.omega_rotor_rad_s * 1.5e-6;
-        counts = theta_rotor_rad * counts_per_rad + 2.28 * sim_gaussian();
+        counts = theta_rotor_rad * counts_per_rad +
+                 static_cast<double>(s_state.encoder_noise_rad * static_cast<float>(counts_per_rad)) *
+                     static_cast<double>(sim_gaussian());
     }
     out->position_counts = static_cast<std::int64_t>(std::llround(counts));
     out->timestamp_us = static_cast<std::uint32_t>(s_state.time_us);
