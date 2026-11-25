@@ -29,7 +29,7 @@ MechanicalParams mechanics_params_rigid() {
  * a haptic joint does. */
 MechanicalParams mechanics_params_compliant_load() {
     MechanicalParams mechanics{};
-    mechanics.load_inertia_kg_m2 = 1.5e-4;             /* ASSUMED, hand on a 30 mm knob */
+    mechanics.load_inertia_kg_m2 = 1.5e-4; /* ASSUMED, hand on a 30 mm knob */
     /* Derived on day 4, not assumed: a 6 mm steel shaft over 40 mm is
      * G J / L = 79.3e9 * 1.27e-10 / 0.04 = 250 N m/rad, and that is what holds a
      * knob on a motor. The 0.9 N m/rad this table used to carry put the load's
@@ -41,7 +41,7 @@ MechanicalParams mechanics_params_compliant_load() {
      * of 0.04 on the coupled mode. ASSUMED, because no coupling has been
      * measured, and the joint's own Coulomb friction is what actually damps it. */
     mechanics.coupling_damping_nm_s_per_rad = 2.0e-3;
-    mechanics.coulomb_torque_nm = 8.0e-3;               /* ASSUMED, bearing and seal */
+    mechanics.coulomb_torque_nm = 8.0e-3; /* ASSUMED, bearing and seal */
     return mechanics;
 }
 

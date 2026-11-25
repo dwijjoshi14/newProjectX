@@ -38,15 +38,15 @@ typedef struct {
     uint32_t fault_bits;         /* last latched fault mask, HAL_FAULT_* bits */
     /* Day 4. The position quantities are rotor frame, rad, and remain valid
      * past one turn because the encoder counts are continuous. */
-    float position_rad;               /* measured rotor position, rad */
-    float position_ref_rad;           /* position reference in use, rad */
-    float position_error_rad;         /* reference minus measured, rad */
-    float position_kp_per_s;          /* commissioned position gain, 1/s */
-    float speed_crossover_rad_s;      /* commissioned speed loop crossover, rad/s */
-    float speed_command_rad_s;        /* speed the cascade is asking for, rad/s */
-    float torque_ref_nm;              /* impedance torque reference, N m */
-    float stiffness_nm_per_rad;       /* rendered stiffness, N m/rad */
-    float damping_nm_s_per_rad;       /* rendered damping, N m s/rad */
+    float position_rad;          /* measured rotor position, rad */
+    float position_ref_rad;      /* position reference in use, rad */
+    float position_error_rad;    /* reference minus measured, rad */
+    float position_kp_per_s;     /* commissioned position gain, 1/s */
+    float speed_crossover_rad_s; /* commissioned speed loop crossover, rad/s */
+    float speed_command_rad_s;   /* speed the cascade is asking for, rad/s */
+    float torque_ref_nm;         /* impedance torque reference, N m */
+    float stiffness_nm_per_rad;  /* rendered stiffness, N m/rad */
+    float damping_nm_s_per_rad;  /* rendered damping, N m s/rad */
 } firmware_status_t;
 
 /* Bring the drive up: HAL, sensor offsets, PWM off then armed. */

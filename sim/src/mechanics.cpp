@@ -55,9 +55,8 @@ double MechanicalSystem::coupling_torque_nm(double delta_rad, double delta_omega
            params_.coupling_damping_nm_s_per_rad * delta_omega_rad_s;
 }
 
-MechanicsStep MechanicalSystem::step(double dt_s, double theta_rotor_rad,
-                                     double omega_rotor_rad_s, double torque_motor_nm,
-                                     double torque_external_nm) {
+MechanicsStep MechanicalSystem::step(double dt_s, double theta_rotor_rad, double omega_rotor_rad_s,
+                                     double torque_motor_nm, double torque_external_nm) {
     MechanicsStep out{theta_rotor_rad, omega_rotor_rad_s};
 
     /* Friction torque to apply this step, and whether it holds the shaft. The
@@ -92,11 +91,10 @@ MechanicsStep MechanicalSystem::step(double dt_s, double theta_rotor_rad,
     readout_.torque_hand_nm =
         params_.load_spring_nm_per_rad * (theta_load_rad - params_.load_rest_angle_rad) +
         params_.load_damping_nm_s_per_rad * omega_load_rad_s;
-    readout_.torque_wall_nm = (params_.wall_stiffness_nm_per_rad > 0.0 &&
-                               theta_load_rad > params_.wall_angle_rad)
-                                  ? params_.wall_stiffness_nm_per_rad *
-                                        (theta_load_rad - params_.wall_angle_rad)
-                                  : 0.0;
+    readout_.torque_wall_nm =
+        (params_.wall_stiffness_nm_per_rad > 0.0 && theta_load_rad > params_.wall_angle_rad)
+            ? params_.wall_stiffness_nm_per_rad * (theta_load_rad - params_.wall_angle_rad)
+            : 0.0;
 
     const double viscous_nm = rotor_viscous_nm_s_per_rad_ * omega_rotor_rad_s;
     /* The no-reversal rule below belongs to Coulomb friction and to nothing
@@ -125,8 +123,7 @@ MechanicsStep MechanicalSystem::step(double dt_s, double theta_rotor_rad,
             /* Coulomb friction cannot reverse the shaft, so a step that would
              * take the speed through zero ends at zero, and the next step starts
              * from rest where the stiction rule decides whether it moves. */
-            omega_rad_s =
-                (coulomb_active && omega_rad_s * next_rad_s < 0.0) ? 0.0 : next_rad_s;
+            omega_rad_s = (coulomb_active && omega_rad_s * next_rad_s < 0.0) ? 0.0 : next_rad_s;
         }
         out.omega_rotor_rad_s = omega_rad_s;
         out.theta_rotor_rad = theta_rotor_rad + omega_rad_s * dt_s;
@@ -138,14 +135,12 @@ MechanicsStep MechanicalSystem::step(double dt_s, double theta_rotor_rad,
         readout_.viscous_j += viscous_j_increment;
         readout_.coulomb_j += std::fabs(friction_nm * omega_rad_s) * dt_s;
 
-        const double hand_deflection_rad =
-            out.theta_rotor_rad - params_.load_rest_angle_rad;
+        const double hand_deflection_rad = out.theta_rotor_rad - params_.load_rest_angle_rad;
         const double wall_deflection_rad =
             std::max(0.0, out.theta_rotor_rad - params_.wall_angle_rad);
-        readout_.elastic_j = 0.5 * params_.load_spring_nm_per_rad * hand_deflection_rad *
-                                 hand_deflection_rad +
-                             0.5 * params_.wall_stiffness_nm_per_rad * wall_deflection_rad *
-                                 wall_deflection_rad;
+        readout_.elastic_j =
+            0.5 * params_.load_spring_nm_per_rad * hand_deflection_rad * hand_deflection_rad +
+            0.5 * params_.wall_stiffness_nm_per_rad * wall_deflection_rad * wall_deflection_rad;
         return out;
     }
 
@@ -178,22 +173,18 @@ MechanicsStep MechanicalSystem::step(double dt_s, double theta_rotor_rad,
     readout_.omega_load_rad_s = omega_load_rad_s_;
     readout_.torque_coupling_nm = coupling_nm;
     readout_.torque_coulomb_nm = friction_nm;
-    readout_.viscous_j += viscous_j_increment +
-                          params_.load_damping_nm_s_per_rad * omega_load_rad_s_ *
-                              omega_load_rad_s_ * dt_s;
+    readout_.viscous_j += viscous_j_increment + params_.load_damping_nm_s_per_rad *
+                                                    omega_load_rad_s_ * omega_load_rad_s_ * dt_s;
     readout_.coulomb_j += std::fabs(friction_nm * omega_rotor_rad_s_new) * dt_s;
 
-    const double deflection_rad =
-        std::max(0.0, std::fabs(out.theta_rotor_rad - theta_load_rad_) -
-                          0.5 * params_.backlash_rad);
+    const double deflection_rad = std::max(0.0, std::fabs(out.theta_rotor_rad - theta_load_rad_) -
+                                                    0.5 * params_.backlash_rad);
     const double hand_deflection_rad = theta_load_rad_ - params_.load_rest_angle_rad;
     const double wall_deflection_rad = std::max(0.0, theta_load_rad_ - params_.wall_angle_rad);
-    readout_.elastic_j = 0.5 * params_.coupling_stiffness_nm_per_rad * deflection_rad *
-                             deflection_rad +
-                         0.5 * params_.load_spring_nm_per_rad * hand_deflection_rad *
-                             hand_deflection_rad +
-                         0.5 * params_.wall_stiffness_nm_per_rad * wall_deflection_rad *
-                             wall_deflection_rad;
+    readout_.elastic_j =
+        0.5 * params_.coupling_stiffness_nm_per_rad * deflection_rad * deflection_rad +
+        0.5 * params_.load_spring_nm_per_rad * hand_deflection_rad * hand_deflection_rad +
+        0.5 * params_.wall_stiffness_nm_per_rad * wall_deflection_rad * wall_deflection_rad;
     return out;
 }
 

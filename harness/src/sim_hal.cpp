@@ -255,9 +255,10 @@ hal_status_t hal_encoder_read(hal_encoder_sample_t *out) {
          * at 14 bits is 2.3 counts, so the encoder is not quiet enough to be
          * treated as exact between samples. */
         theta_rotor_rad -= mechanical.omega_rotor_rad_s * 1.5e-6;
-        counts = theta_rotor_rad * counts_per_rad +
-                 static_cast<double>(s_state.encoder_noise_rad * static_cast<float>(counts_per_rad)) *
-                     static_cast<double>(sim_gaussian());
+        counts =
+            theta_rotor_rad * counts_per_rad +
+            static_cast<double>(s_state.encoder_noise_rad * static_cast<float>(counts_per_rad)) *
+                static_cast<double>(sim_gaussian());
     }
     out->position_counts = static_cast<std::int64_t>(std::llround(counts));
     out->timestamp_us = static_cast<std::uint32_t>(s_state.time_us);

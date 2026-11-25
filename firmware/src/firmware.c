@@ -266,8 +266,7 @@ void firmware_init(void) {
     /* Torque per amp, from the same two motor constants the feedforward uses.
      * The impedance mode needs it and the firmware has no other place to get
      * it: Kt is not a separate board config field, it is 1.5 p lambda. */
-    s_torque_constant_nm_per_a =
-        1.5f * (float)s_board->pole_pairs * s_board->motor_flux_linkage_wb;
+    s_torque_constant_nm_per_a = 1.5f * (float)s_board->pole_pairs * s_board->motor_flux_linkage_wb;
     if (!(s_torque_constant_nm_per_a > 0.0f)) {
         hal_panic(3u, (uint32_t)__LINE__);
         return;
@@ -294,9 +293,8 @@ void firmware_init(void) {
     float allowed_rad_s = FIRMWARE_SPEED_CROSSOVER_RAD_S;
     if (s_board->coupling_stiffness_nm_per_rad > 0.0f &&
         s_board->reflected_load_inertia_kg_m2 > 0.0f) {
-        const float anti_resonance_rad_s =
-            foc_sqrt(s_board->coupling_stiffness_nm_per_rad /
-                     s_board->reflected_load_inertia_kg_m2);
+        const float anti_resonance_rad_s = foc_sqrt(s_board->coupling_stiffness_nm_per_rad /
+                                                    s_board->reflected_load_inertia_kg_m2);
         if (0.25f * anti_resonance_rad_s < allowed_rad_s) {
             allowed_rad_s = 0.25f * anti_resonance_rad_s;
         }
@@ -518,9 +516,8 @@ void firmware_tick(void) {
         s_position_divider += 1u;
         if (s_position_divider >= HAL_POSITION_DIVIDER) {
             s_position_divider = 0u;
-            s_speed_command_rad_s =
-                firmware_clamp(s_position_kp_per_s * s_position_error_rad,
-                               FIRMWARE_POSITION_MAX_SPEED_RAD_S);
+            s_speed_command_rad_s = firmware_clamp(s_position_kp_per_s * s_position_error_rad,
+                                                   FIRMWARE_POSITION_MAX_SPEED_RAD_S);
             s_status.speed_command_rad_s = s_speed_command_rad_s;
         }
         if (speed_update) {
@@ -533,8 +530,8 @@ void firmware_tick(void) {
          * estimate multiplied into it, which is a ten tick difference behind the
          * truth, so a stiff damper here lags. The observer that would fix that
          * does not exist yet. */
-        const float torque_nm =
-            s_stiffness_nm_per_rad * s_position_error_rad - s_damping_nm_s_per_rad * s_status.omega_rad_s;
+        const float torque_nm = s_stiffness_nm_per_rad * s_position_error_rad -
+                                s_damping_nm_s_per_rad * s_status.omega_rad_s;
         s_status.torque_ref_nm = torque_nm;
         s_iq_reference_a =
             firmware_clamp(torque_nm / s_torque_constant_nm_per_a, FIRMWARE_STALL_CURRENT_A);

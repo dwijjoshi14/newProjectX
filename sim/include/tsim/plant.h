@@ -71,12 +71,12 @@ struct MechanicalState {
     double torque_motor_nm;    /* torque produced this step, N m, rotor frame */
     double torque_external_nm; /* applied load torque, N m, rotor frame */
     /* Day 4. With a rigid coupling the load fields equal the rotor fields. */
-    double theta_load_rad;      /* load side angle, rad */
-    double omega_load_rad_s;    /* load side speed, rad/s */
-    double torque_coupling_nm;  /* rotor into the load, N m */
-    double torque_hand_nm;      /* hand reaction on the load, N m */
-    double torque_wall_nm;      /* wall reaction on the load, N m */
-    double torque_coulomb_nm;   /* shaft friction this step, N m */
+    double theta_load_rad;     /* load side angle, rad */
+    double omega_load_rad_s;   /* load side speed, rad/s */
+    double torque_coupling_nm; /* rotor into the load, N m */
+    double torque_hand_nm;     /* hand reaction on the load, N m */
+    double torque_wall_nm;     /* wall reaction on the load, N m */
+    double torque_coulomb_nm;  /* shaft friction this step, N m */
 };
 
 struct EnergyAccount {

@@ -26,16 +26,16 @@ namespace tsim {
  * means the feature is absent, which is the only way this struct has a
  * meaningful default. */
 struct MechanicalParams {
-    double load_inertia_kg_m2;             /* hand side of the coupling, kg m^2, 0 = rigid */
-    double coupling_stiffness_nm_per_rad;  /* 0 = rigid coupling, N m/rad */
-    double coupling_damping_nm_s_per_rad;  /* N m s/rad */
-    double backlash_rad;                   /* total lost motion, split half each side, rad */
-    double load_spring_nm_per_rad;         /* the hand as a spring, N m/rad */
-    double load_damping_nm_s_per_rad;      /* the hand as a damper, N m s/rad */
-    double load_rest_angle_rad;            /* angle the hand spring is relaxed at, rad */
-    double wall_angle_rad;                 /* one sided stop, engaged beyond this, rad */
-    double wall_stiffness_nm_per_rad;      /* N m/rad, large is a rigid wall */
-    double coulomb_torque_nm;              /* shaft friction, N m, 0 = none */
+    double load_inertia_kg_m2;            /* hand side of the coupling, kg m^2, 0 = rigid */
+    double coupling_stiffness_nm_per_rad; /* 0 = rigid coupling, N m/rad */
+    double coupling_damping_nm_s_per_rad; /* N m s/rad */
+    double backlash_rad;                  /* total lost motion, split half each side, rad */
+    double load_spring_nm_per_rad;        /* the hand as a spring, N m/rad */
+    double load_damping_nm_s_per_rad;     /* the hand as a damper, N m s/rad */
+    double load_rest_angle_rad;           /* angle the hand spring is relaxed at, rad */
+    double wall_angle_rad;                /* one sided stop, engaged beyond this, rad */
+    double wall_stiffness_nm_per_rad;     /* N m/rad, large is a rigid wall */
+    double coulomb_torque_nm;             /* shaft friction, N m, 0 = none */
 };
 
 /* Result of one mechanical step. The rotor state is returned rather than kept,
@@ -50,15 +50,15 @@ struct MechanicsStep {
  * above. The energies are the mechanical system's own account: viscous and
  * Coulomb are accumulated losses, elastic is what the springs hold right now. */
 struct MechanicsReadout {
-    double theta_load_rad;       /* load side angle, rad */
-    double omega_load_rad_s;     /* load side speed, rad/s */
-    double torque_coupling_nm;   /* rotor into the load, N m */
-    double torque_hand_nm;       /* hand reaction on the load, N m */
-    double torque_wall_nm;       /* wall reaction on the load, N m */
-    double torque_coulomb_nm;    /* shaft friction this step, N m */
-    double viscous_j;            /* accumulated viscous loss, J */
-    double coulomb_j;            /* accumulated friction loss, J */
-    double elastic_j;            /* stored in the springs at this instant, J */
+    double theta_load_rad;     /* load side angle, rad */
+    double omega_load_rad_s;   /* load side speed, rad/s */
+    double torque_coupling_nm; /* rotor into the load, N m */
+    double torque_hand_nm;     /* hand reaction on the load, N m */
+    double torque_wall_nm;     /* wall reaction on the load, N m */
+    double torque_coulomb_nm;  /* shaft friction this step, N m */
+    double viscous_j;          /* accumulated viscous loss, J */
+    double coulomb_j;          /* accumulated friction loss, J */
+    double elastic_j;          /* stored in the springs at this instant, J */
 };
 
 class MechanicalSystem {

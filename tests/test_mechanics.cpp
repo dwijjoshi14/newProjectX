@@ -31,7 +31,8 @@ double kinetic_j(double inertia, double omega) {
 std::size_t zero_crossings(const std::vector<double> &values) {
     std::size_t crossings = 0;
     for (std::size_t i = 1; i < values.size(); ++i) {
-        if ((values[i - 1] < 0.0 && values[i] >= 0.0) || (values[i - 1] > 0.0 && values[i] <= 0.0)) {
+        if ((values[i - 1] < 0.0 && values[i] >= 0.0) ||
+            (values[i - 1] > 0.0 && values[i] <= 0.0)) {
             crossings += 1;
         }
     }
@@ -60,8 +61,7 @@ TSIM_TEST(rigid_mechanics_reproduce_the_day_one_body) {
     }
 
     const double time_s = static_cast<double>(steps) * tsim::kPlantStepS;
-    const double tau_s =
-        params.inertia_kg_m2 / params.viscous_friction_nm_s_per_rad;
+    const double tau_s = params.inertia_kg_m2 / params.viscous_friction_nm_s_per_rad;
     const double terminal_rad_s = 0.05 / params.viscous_friction_nm_s_per_rad;
     const double expected_rad_s = terminal_rad_s * (1.0 - std::exp(-time_s / tau_s));
 
@@ -80,8 +80,7 @@ TSIM_TEST(rigid_mechanics_reproduce_the_day_one_body) {
     TSIM_CHECK(plant.energy().coulomb_j == 0.0);
 
     /* Work in equals kinetic energy out plus what the drag took. */
-    const double kinetic_j =
-        0.5 * params.inertia_kg_m2 * expected_rad_s * expected_rad_s;
+    const double kinetic_j = 0.5 * params.inertia_kg_m2 * expected_rad_s * expected_rad_s;
     const double work_j = 0.05 * plant.mechanical().theta_rotor_rad;
     TSIM_CHECK_NEAR(work_j, kinetic_j + plant.energy().viscous_j, 2.0e-3);
 }
@@ -114,10 +113,9 @@ TSIM_TEST(two_masses_resonate_where_the_analytic_frequency_says) {
     const std::size_t crossings = zero_crossings(delta);
     TSIM_CHECK(crossings > 90);
     const double time_s = static_cast<double>(steps) * tsim::kPlantStepS;
-    const double measured_rad_s =
-        tsim::kTwoPi * static_cast<double>(crossings) / (2.0 * time_s);
-    const double analytic_rad_s = std::sqrt(kCouplingNmPerRad * (1.0 / kRotorInertiaKgM2 +
-                                                                1.0 / kHandInertiaKgM2));
+    const double measured_rad_s = tsim::kTwoPi * static_cast<double>(crossings) / (2.0 * time_s);
+    const double analytic_rad_s =
+        std::sqrt(kCouplingNmPerRad * (1.0 / kRotorInertiaKgM2 + 1.0 / kHandInertiaKgM2));
     TSIM_CHECK_NEAR(measured_rad_s, analytic_rad_s, 0.01 * analytic_rad_s);
 
     /* No net torque on the pair, so the centre of mass does not move. Momentum
@@ -189,8 +187,8 @@ TSIM_TEST(coulomb_friction_holds_the_shaft_below_breakaway) {
         state = system.step(tsim::kPlantStepS, state.theta_rotor_rad, state.omega_rotor_rad_s,
                             drive_nm, 0.0);
     }
-    const double expected_rad_s = (drive_nm - mechanics.coulomb_torque_nm) / kRotorInertiaKgM2 *
-                                  10.0e-3;
+    const double expected_rad_s =
+        (drive_nm - mechanics.coulomb_torque_nm) / kRotorInertiaKgM2 * 10.0e-3;
     TSIM_CHECK_NEAR(state.omega_rotor_rad_s, expected_rad_s, 1.0e-3 * expected_rad_s);
 }
 
@@ -208,8 +206,8 @@ TSIM_TEST(a_coasting_shaft_stops_in_finite_time) {
 
     tsim::MechanicsStep state{0.0, 0.0};
     for (std::uint32_t i = 0; i < 2000; ++i) { /* 2 ms spin up */
-        state = system.step(tsim::kPlantStepS, state.theta_rotor_rad, state.omega_rotor_rad_s,
-                            0.05, 0.0);
+        state = system.step(tsim::kPlantStepS, state.theta_rotor_rad, state.omega_rotor_rad_s, 0.05,
+                            0.0);
     }
     TSIM_CHECK(state.omega_rotor_rad_s > 30.0);
 
@@ -261,8 +259,8 @@ TSIM_TEST(backlash_is_a_dead_zone_of_exactly_the_stated_width) {
     double angle_at_engagement_rad = -1.0;
     for (std::uint32_t i = 0; i < 20000; ++i) { /* 20 ms */
         const double before = system.readout().torque_coupling_nm;
-        state = system.step(tsim::kPlantStepS, state.theta_rotor_rad, state.omega_rotor_rad_s,
-                            0.01, 0.0);
+        state = system.step(tsim::kPlantStepS, state.theta_rotor_rad, state.omega_rotor_rad_s, 0.01,
+                            0.0);
         if (before == 0.0 && system.readout().torque_coupling_nm != 0.0 &&
             angle_at_engagement_rad < 0.0) {
             angle_at_engagement_rad = state.theta_rotor_rad;
@@ -293,8 +291,8 @@ TSIM_TEST(a_wall_and_a_hand_hold_the_joint_at_their_own_angles) {
      * to get there, which is a property of the joint and not of the test. */
     tsim::MechanicsStep state{0.0, 0.0};
     for (std::uint32_t i = 0; i < 300000; ++i) {
-        state = system.step(tsim::kPlantStepS, state.theta_rotor_rad, state.omega_rotor_rad_s,
-                            0.02, 0.0);
+        state = system.step(tsim::kPlantStepS, state.theta_rotor_rad, state.omega_rotor_rad_s, 0.02,
+                            0.0);
     }
     /* 0.02 N m into 1.8 N m/rad past 0.1 rad is 0.0111 rad of penetration. */
     TSIM_CHECK_NEAR(state.theta_rotor_rad, 0.1111, 2.0e-4);
@@ -308,8 +306,8 @@ TSIM_TEST(a_wall_and_a_hand_hold_the_joint_at_their_own_angles) {
 
     state = tsim::MechanicsStep{0.0, 0.0};
     for (std::uint32_t i = 0; i < 300000; ++i) {
-        state = system.step(tsim::kPlantStepS, state.theta_rotor_rad, state.omega_rotor_rad_s,
-                            0.02, 0.0);
+        state = system.step(tsim::kPlantStepS, state.theta_rotor_rad, state.omega_rotor_rad_s, 0.02,
+                            0.0);
     }
     /* 0.02 N m into 0.45 N m/rad is 0.0444 rad, and the hand holds it there. */
     TSIM_CHECK_NEAR(state.theta_rotor_rad, 0.04444, 2.0e-4);

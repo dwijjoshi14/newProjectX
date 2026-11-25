@@ -238,10 +238,10 @@ std::vector<SweepPoint> sweep_schedule(const ScenarioConfig &config) {
         const double frequency_hz = config.sweep_start_hz * std::pow(ratio, static_cast<double>(i));
         const double period_s = 1.0 / frequency_hz;
         const double floor_s = 0.06;
-        const std::uint64_t settle_ticks = static_cast<std::uint64_t>(std::ceil(
-            std::max(2.0 * period_s, 0.5 * floor_s) / tsim::kControlPeriodS));
-        const std::uint64_t measure_ticks = static_cast<std::uint64_t>(std::ceil(
-            std::max(4.0 * period_s, 0.5 * floor_s) / tsim::kControlPeriodS));
+        const std::uint64_t settle_ticks = static_cast<std::uint64_t>(
+            std::ceil(std::max(2.0 * period_s, 0.5 * floor_s) / tsim::kControlPeriodS));
+        const std::uint64_t measure_ticks = static_cast<std::uint64_t>(
+            std::ceil(std::max(4.0 * period_s, 0.5 * floor_s) / tsim::kControlPeriodS));
         SweepPoint point;
         point.frequency_hz = frequency_hz;
         point.start_tick = tick;
@@ -274,9 +274,9 @@ Reference position_reference_at(const ScenarioConfig &config, std::uint64_t tick
     case Scenario::kSweptSine: {
         for (const SweepPoint &point : schedule) {
             if (tick < point.end_tick) {
-                const double phase = tsim::kTwoPi * point.frequency_hz *
-                                     (static_cast<double>(tick - point.start_tick) *
-                                      tsim::kControlPeriodS);
+                const double phase =
+                    tsim::kTwoPi * point.frequency_hz *
+                    (static_cast<double>(tick - point.start_tick) * tsim::kControlPeriodS);
                 reference.position_rad =
                     static_cast<float>(config.sweep_amplitude_rad * std::sin(phase));
                 reference.sweep_hz = point.frequency_hz;
@@ -372,17 +372,17 @@ bool read_on_off(const char *text, bool *out_value) {
 }
 
 void print_usage(const char *program) {
-    std::fprintf(
-        stderr,
-        "usage: %s [--scenario speed_step|current_step|dead_time|swept_sine|wall_contact|backlash]\n"
-        "          [--plant ideal|switching] [--load rigid|compliant|hand|wall]\n"
-        "          [--mode speed|position|impedance]\n"
-        "          [--dead-time-ns N] [--compensation on|off] [--imperfections on|off]\n"
-        "          [--backlash-deg X] [--wall-angle-rad X] [--stiffness X] [--damping X]\n"
-        "          [--coupling-stiffness X] [--encoder-noise-deg X]\n"
-        "          [--position-ref-rad X] [--sweep-amplitude-rad X] [--ticks N]\n"
-        "          [--log-every N] [--out PATH]\n",
-        program);
+    std::fprintf(stderr,
+                 "usage: %s [--scenario "
+                 "speed_step|current_step|dead_time|swept_sine|wall_contact|backlash]\n"
+                 "          [--plant ideal|switching] [--load rigid|compliant|hand|wall]\n"
+                 "          [--mode speed|position|impedance]\n"
+                 "          [--dead-time-ns N] [--compensation on|off] [--imperfections on|off]\n"
+                 "          [--backlash-deg X] [--wall-angle-rad X] [--stiffness X] [--damping X]\n"
+                 "          [--coupling-stiffness X] [--encoder-noise-deg X]\n"
+                 "          [--position-ref-rad X] [--sweep-amplitude-rad X] [--ticks N]\n"
+                 "          [--log-every N] [--out PATH]\n",
+                 program);
 }
 
 ScenarioConfig parse_options(int argc, char **argv) {
@@ -575,11 +575,13 @@ int main(int argc, char **argv) {
         firmware_set_current_reference_a(current_reference_at(config, 0));
     } else if (config.mode == ControlMode::kPosition) {
         firmware_set_mode(FIRMWARE_MODE_POSITION);
-        firmware_set_position_reference_rad(position_reference_at(config, 0, schedule).position_rad);
+        firmware_set_position_reference_rad(
+            position_reference_at(config, 0, schedule).position_rad);
     } else if (config.mode == ControlMode::kImpedance) {
         firmware_set_impedance(config.stiffness_nm_per_rad, config.damping_nm_s_per_rad);
         firmware_set_mode(FIRMWARE_MODE_IMPEDANCE);
-        firmware_set_position_reference_rad(position_reference_at(config, 0, schedule).position_rad);
+        firmware_set_position_reference_rad(
+            position_reference_at(config, 0, schedule).position_rad);
     } else {
         firmware_set_mode(FIRMWARE_MODE_SPEED);
         firmware_set_speed_reference_rad_s(config.speed_reference_rad_s);
@@ -649,9 +651,8 @@ int main(int argc, char **argv) {
         peak_current_a = (phase_current_a > peak_current_a) ? phase_current_a : peak_current_a;
         lowest_bus_v = (bus_v < lowest_bus_v) ? bus_v : lowest_bus_v;
         highest_bus_v = (bus_v > highest_bus_v) ? bus_v : highest_bus_v;
-        largest_position_error_rad =
-            std::max(largest_position_error_rad,
-                     std::fabs(static_cast<double>(status->position_error_rad)));
+        largest_position_error_rad = std::max(
+            largest_position_error_rad, std::fabs(static_cast<double>(status->position_error_rad)));
 
         if (tick % config.log_every == 0) {
             std::fprintf(csv,

@@ -152,16 +152,11 @@ MechanicalState IdealPlant::mechanical() const {
      * so the load side is not meaningful and is reported as the rotor. */
     const double theta_load_rad = locked_ ? theta_rotor_rad_ : readout.theta_load_rad;
     const double omega_load_rad_s = locked_ ? 0.0 : readout.omega_load_rad_s;
-    return MechanicalState{theta_rotor_rad_,
-                           omega_rotor_rad_s_,
-                           torque_motor_nm_,
-                           torque_external_nm_,
-                           theta_load_rad,
-                           omega_load_rad_s,
-                           readout.torque_coupling_nm,
-                           readout.torque_hand_nm,
-                           readout.torque_wall_nm,
-                           readout.torque_coulomb_nm};
+    return MechanicalState{
+        theta_rotor_rad_,           omega_rotor_rad_s_,     torque_motor_nm_,
+        torque_external_nm_,        theta_load_rad,         omega_load_rad_s,
+        readout.torque_coupling_nm, readout.torque_hand_nm, readout.torque_wall_nm,
+        readout.torque_coulomb_nm};
 }
 
 Telemetry IdealPlant::telemetry() const {
