@@ -21,13 +21,24 @@
 #define STUB_ROTOR_INERTIA_KG_M2 2.3e-6f  /* rotor inertia, parameters.md */
 
 static hal_board_config_t s_board = {
-    STUB_POLE_PAIRS, STUB_ENCODER_COUNTS_PER_REV, 0, false, STUB_SHUNT_RESISTANCE_OHM,
-    STUB_AMP_GAIN_V_PER_V, STUB_ADC_REFERENCE_V, (uint16_t)STUB_ADC_FULL_SCALE_COUNTS,
-    STUB_BUS_VOLTAGE_NOMINAL_V, STUB_DEAD_TIME_S, STUB_PWM_PERIOD_S, STUB_INDUCTANCE_H,
+    STUB_POLE_PAIRS,
+    STUB_ENCODER_COUNTS_PER_REV,
+    0,
+    false,
+    STUB_SHUNT_RESISTANCE_OHM,
+    STUB_AMP_GAIN_V_PER_V,
+    STUB_ADC_REFERENCE_V,
+    (uint16_t)STUB_ADC_FULL_SCALE_COUNTS,
+    STUB_BUS_VOLTAGE_NOMINAL_V,
+    STUB_DEAD_TIME_S,
+    STUB_PWM_PERIOD_S,
+    STUB_INDUCTANCE_H,
     STUB_FLUX_LINKAGE_WB,
     /* The stub describes the bare motor: rotor inertia only, nothing hanging off
      * the shaft, so the speed loop gains scale by exactly one. */
-    STUB_ROTOR_INERTIA_KG_M2, 0.0f, 0.0f, /* rigid transmission, no resonance limit in the stub */
+    STUB_ROTOR_INERTIA_KG_M2,
+    0.0f,
+    0.0f, /* rigid transmission, no resonance limit in the stub */
     0.0f, /* and a noise free encoder, so the gains are the design's own */
 };
 

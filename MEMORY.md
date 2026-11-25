@@ -7,9 +7,10 @@ Durable decisions and corrections. Newest last.
 - 2026-11-22 plant uses amplitude invariant Clarke and Park with torque `T = 1.5 p lambda iq` and back EMF `e_a = -E sin(theta_e)`. Written down because sign convention errors are the top rung 1 risk.
 - 2026-11-22 determinism claim is byte identical for repeated runs of the same compiler and flags on the same architecture. Cross compiler bit identity is not claimed.
 - 2026-11-22 sandbox has no root and no apt. cmake, ninja, clang-format,
-  clang-tidy 18.1.8 and cppcheck 2.22.0 all live in `.venv`. clang-tidy is
-  pinned to 18.1.8 because that is the Ubuntu runner version, and a local clean
-  run only means something if it uses the same LLVM release.
+  clang-tidy and cppcheck all live in `.venv`. clang-tidy is pinned to 18.1.8
+  because that is the Ubuntu runner version, and a local clean run only means
+  something if it uses the same LLVM release. clang-format moved to 21.1.6 on
+  2026-11-25 for the same reason, see the day 4 entry.
 - 2026-11-23 day 2. Current loop is a PI at 20 kHz with Kp = 1.61 V/A, which is
   a 1 kHz crossover on 0.256 mH, and Ki on the winding pole at 1137 rad/s.
   Speed loop is 100 Hz behind a 10 ms command filter, because the ten tick
@@ -54,6 +55,11 @@ Durable decisions and corrections. Newest last.
   free running before the bridge is enabled. Without it the drive ran with a
   1.5 mV amplifier offset, which is 0.06 A, and it showed up as 0.047 A of d
   axis current.
+- 2026-11-25 the ci format gate is clang-format 21.1.6, because ubuntu-latest
+  moved to 26.04 and apt now installs 21.1.6 there. The sandbox venv pins the
+  same version, since 18 and 23 each disagree with 21 about how to lay out one
+  aggregate initialiser in `stub_hal.c` and formatting with either of them turns
+  the gate red. Pin the formatter to the runner's, not the newest.
 - 2026-11-25 day 4. Mechanics is one `MechanicalSystem` shared by both plants,
   because two plants disagreeing about inertia is the bug this whole project is
   built to avoid. The rigid configuration reproduces the day 1 body bit for bit
