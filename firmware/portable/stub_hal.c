@@ -18,6 +18,7 @@
 #define STUB_AMBIENT_C 25.0f              /* bench ambient, degC */
 #define STUB_INDUCTANCE_H 2.56e-4f        /* phase inductance, parameters.md */
 #define STUB_FLUX_LINKAGE_WB 4.39e-3f     /* flux linkage, parameters.md */
+#define STUB_ROTOR_INERTIA_KG_M2 2.3e-6f  /* rotor inertia, parameters.md */
 
 static hal_board_config_t s_board = {
     STUB_POLE_PAIRS,
@@ -33,6 +34,12 @@ static hal_board_config_t s_board = {
     STUB_PWM_PERIOD_S,
     STUB_INDUCTANCE_H,
     STUB_FLUX_LINKAGE_WB,
+    /* The stub describes the bare motor: rotor inertia only, nothing hanging off
+     * the shaft, so the speed loop gains scale by exactly one. */
+    STUB_ROTOR_INERTIA_KG_M2,
+    0.0f,
+    0.0f, /* rigid transmission, no resonance limit in the stub */
+    0.0f, /* and a noise free encoder, so the gains are the design's own */
 };
 
 static float s_duty[3] = {0.5f, 0.5f, 0.5f};

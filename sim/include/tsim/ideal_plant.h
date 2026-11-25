@@ -1,5 +1,6 @@
 /* ideal_plant.h, rung 1 of the fidelity ladder: back EMF, rotor inertia and
- * viscous friction only. No switching, no saturation, no friction torque. */
+ * viscous friction only. No switching. The mechanics is whatever PlantParams
+ * asks for, which by default is the single rigid body day 1 wrote. */
 #ifndef TSIM_SIM_IDEAL_PLANT_H
 #define TSIM_SIM_IDEAL_PLANT_H
 
@@ -28,6 +29,7 @@ class IdealPlant final : public IPlant {
 
   private:
     PlantParams params_;
+    MechanicalSystem mechanics_;
     bool locked_ = false;
     double step_s_ = kPlantStepS;
     InverterCommand command_{};

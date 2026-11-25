@@ -13,9 +13,11 @@ extern "C" {
  * because carrying an integrator across a reference step is how a loop winds
  * up before its first tick. */
 typedef enum {
-    FIRMWARE_MODE_OFF = 0,     /* gates on, zero vector, no torque */
-    FIRMWARE_MODE_CURRENT = 1, /* q axis current reference, A */
-    FIRMWARE_MODE_SPEED = 2,   /* rotor speed reference, rad/s */
+    FIRMWARE_MODE_OFF = 0,       /* gates on, zero vector, no torque */
+    FIRMWARE_MODE_CURRENT = 1,   /* q axis current reference, A */
+    FIRMWARE_MODE_SPEED = 2,     /* rotor speed reference, rad/s */
+    FIRMWARE_MODE_POSITION = 3,  /* rotor position reference, rad, speed cascade */
+    FIRMWARE_MODE_IMPEDANCE = 4, /* spring and damper to a position reference */
 } firmware_mode_t;
 
 typedef struct {
@@ -34,6 +36,17 @@ typedef struct {
     float bus_v;                 /* DC link measured this tick, V */
     bool dead_time_compensation; /* compensation enabled this tick, bool */
     uint32_t fault_bits;         /* last latched fault mask, HAL_FAULT_* bits */
+    /* Day 4. The position quantities are rotor frame, rad, and remain valid
+     * past one turn because the encoder counts are continuous. */
+    float position_rad;               /* measured rotor position, rad */
+    float position_ref_rad;           /* position reference in use, rad */
+    float position_error_rad;         /* reference minus measured, rad */
+    float position_kp_per_s;          /* commissioned position gain, 1/s */
+    float speed_crossover_rad_s;      /* commissioned speed loop crossover, rad/s */
+    float speed_command_rad_s;        /* speed the cascade is asking for, rad/s */
+    float torque_ref_nm;              /* impedance torque reference, N m */
+    float stiffness_nm_per_rad;       /* rendered stiffness, N m/rad */
+    float damping_nm_s_per_rad;       /* rendered damping, N m s/rad */
 } firmware_status_t;
 
 /* Bring the drive up: HAL, sensor offsets, PWM off then armed. */
@@ -56,6 +69,18 @@ void firmware_set_speed_reference_rad_s(float omega_rad_s);
  * drive that knows its dead time should use it. Disabled only to measure what
  * it buys, which is what docs/results.md day 3 does. */
 void firmware_set_dead_time_compensation(bool enable);
+
+/* Rotor position reference, rad, rotor frame, measured from the encoder zero.
+ * Used in position and impedance modes. Entering either mode seeds the
+ * reference to where the shaft already is, so a mode change is not a move to
+ * zero; this call is how the reference then actually moves. */
+void firmware_set_position_reference_rad(float theta_rad);
+
+/* Rendered impedance: torque = stiffness * position error - damping * speed.
+ * Both terms are clamped at zero, and the torque is limited by stall current.
+ * Damping is only as good as the velocity estimate it is multiplied by, which
+ * is a 2 kHz ten tick difference and not an observer. */
+void firmware_set_impedance(float stiffness_nm_per_rad, float damping_nm_s_per_rad);
 
 /* One control tick, 20 kHz. Must finish inside 50 us. */
 void firmware_tick(void);

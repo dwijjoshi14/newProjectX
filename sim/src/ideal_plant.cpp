@@ -18,10 +18,15 @@ double clarke_beta(double a, double b, double c) {
 
 } // namespace
 
-IdealPlant::IdealPlant(const PlantParams &params) : params_(params) {}
+IdealPlant::IdealPlant(const PlantParams &params) : params_(params) {
+    mechanics_.configure(params_.mechanics, params_.inertia_kg_m2,
+                         params_.viscous_friction_nm_s_per_rad);
+}
 
 void IdealPlant::configure(const PlantParams &params) {
     params_ = params;
+    mechanics_.configure(params_.mechanics, params_.inertia_kg_m2,
+                         params_.viscous_friction_nm_s_per_rad);
 }
 
 void IdealPlant::reset(double theta_rotor_rad) {
@@ -40,6 +45,7 @@ void IdealPlant::reset(double theta_rotor_rad) {
     p_mechanical_w_ = 0.0;
     steps_ = 0;
     energy_ = EnergyAccount{};
+    mechanics_.reset(theta_rotor_rad);
 }
 
 void IdealPlant::latch_inverter(const InverterCommand &command) {
@@ -108,14 +114,17 @@ void IdealPlant::step_one() {
         return;
     }
 
-    const double p_viscous_w =
-        params_.viscous_friction_nm_s_per_rad * omega_rotor_rad_s_ * omega_rotor_rad_s_;
-    energy_.viscous_j += p_viscous_w * step_s_;
-
-    const double torque_net_nm = torque_motor_nm_ - torque_external_nm_ -
-                                 params_.viscous_friction_nm_s_per_rad * omega_rotor_rad_s_;
-    omega_rotor_rad_s_ += (torque_net_nm / params_.inertia_kg_m2) * step_s_;
-    theta_rotor_rad_ += omega_rotor_rad_s_ * step_s_;
+    /* Everything past the shaft, which was four lines of rigid body until day
+     * 4 and is now a coupling, a load and friction. With the mechanics left at
+     * its default this is the same arithmetic in the same order, which the
+     * mechanics unit tests assert rather than hope for. */
+    const MechanicsStep step = mechanics_.step(step_s_, theta_rotor_rad_, omega_rotor_rad_s_,
+                                               torque_motor_nm_, torque_external_nm_);
+    theta_rotor_rad_ = step.theta_rotor_rad;
+    omega_rotor_rad_s_ = step.omega_rotor_rad_s;
+    energy_.viscous_j = mechanics_.readout().viscous_j;
+    energy_.coulomb_j = mechanics_.readout().coulomb_j;
+    energy_.elastic_j = mechanics_.readout().elastic_j;
     steps_ += 1;
 }
 
@@ -138,8 +147,21 @@ ElectricalReadout IdealPlant::sample_electrical() const {
 }
 
 MechanicalState IdealPlant::mechanical() const {
-    return MechanicalState{theta_rotor_rad_, omega_rotor_rad_s_, torque_motor_nm_,
-                           torque_external_nm_};
+    const MechanicsReadout &readout = mechanics_.readout();
+    /* A clamped rotor is a shaft held still by something the model does not see,
+     * so the load side is not meaningful and is reported as the rotor. */
+    const double theta_load_rad = locked_ ? theta_rotor_rad_ : readout.theta_load_rad;
+    const double omega_load_rad_s = locked_ ? 0.0 : readout.omega_load_rad_s;
+    return MechanicalState{theta_rotor_rad_,
+                           omega_rotor_rad_s_,
+                           torque_motor_nm_,
+                           torque_external_nm_,
+                           theta_load_rad,
+                           omega_load_rad_s,
+                           readout.torque_coupling_nm,
+                           readout.torque_hand_nm,
+                           readout.torque_wall_nm,
+                           readout.torque_coulomb_nm};
 }
 
 Telemetry IdealPlant::telemetry() const {

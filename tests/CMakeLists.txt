@@ -1,4 +1,4 @@
-add_executable(tsim_tests test_main.cpp test_plant.cpp test_inverter.cpp)
+add_executable(tsim_tests test_main.cpp test_plant.cpp test_inverter.cpp test_mechanics.cpp)
 target_link_libraries(tsim_tests PRIVATE tsim_sim tsim_warnings)
 add_test(NAME unit COMMAND tsim_tests)
 

@@ -11,6 +11,22 @@ namespace tsim {
  * derivation recorded in docs/parameters.md. Friction is ASSUMED. */
 PlantParams maxon_ec_i_40_70w_params();
 
+/* One rigid body with viscous drag and no friction. The day 1 to day 3
+ * mechanics, and the default, so that adding the joint on day 4 does not move
+ * a published number. */
+MechanicalParams mechanics_params_rigid();
+
+/* The joint with a handle on it: a compliant coupling, a hand's worth of inertia
+ * on the far side and shaft friction. No hand spring. */
+MechanicalParams mechanics_params_compliant_load();
+
+/* The same plus a hand, modelled as a spring and a damper to ground. */
+MechanicalParams mechanics_params_hand();
+
+/* The same as the compliant load plus a one sided stop at wall_angle_rad, with
+ * the wall's own stiffness. */
+MechanicalParams mechanics_params_wall(double wall_angle_rad);
+
 /* The average voltage source of rung 1 and 2: no switching, no dead time, no
  * device resistance, a stiff bus. Reproduces day 1 and day 2 exactly. */
 InverterParams inverter_params_ideal();

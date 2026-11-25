@@ -58,6 +58,21 @@ typedef struct {
      * not a firmware change. */
     float motor_inductance_h;    /* phase inductance, H, phase frame */
     float motor_flux_linkage_wb; /* rotor flux linkage, Wb */
+    /* The inertias the speed loop is tuned against. A drive commissioned into a
+     * joint has to know what it is moving: a handle of 1.5e-4 kg m^2 is sixty
+     * six times this motor's rotor, and gains derived for the rotor alone put
+     * the speed crossover at 1.5 Hz instead of 100 once the handle is on. */
+    float motor_inertia_kg_m2;          /* rotor inertia, kg m^2 */
+    float reflected_load_inertia_kg_m2; /* load seen at the shaft, kg m^2, 0 = bare */
+    /* The stiffness between the two. It is what stops the speed loop from
+     * crossing over at 100 Hz on a joint whose coupling rings at 100 Hz, so the
+     * drive has to know it. Zero means a rigid transmission and no limit. */
+    float coupling_stiffness_nm_per_rad; /* N m/rad */
+    /* Encoder noise, rad RMS. The velocity estimate is a ten tick difference of
+     * position, so this number sets the velocity noise and with it the fastest
+     * speed loop the sensor can support. A drive that tuned itself without it
+     * tuned itself into its own encoder. */
+    float encoder_noise_rad; /* rad RMS */
 } hal_board_config_t;
 
 /* Boot. Call once before anything else. Returns HAL_OK on success. */

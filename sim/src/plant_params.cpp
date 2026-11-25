@@ -16,6 +16,58 @@ PlantParams maxon_ec_i_40_70w_params() {
     return params;
 }
 
+/* One rigid body, no friction. This is the day 1 to day 3 mechanics and it
+ * stays the default so that publishing a new plant does not quietly move a
+ * number that is already in docs/results.md. */
+MechanicalParams mechanics_params_rigid() {
+    return MechanicalParams{};
+}
+
+/* The joint with a handle on it: a coupling that is not infinitely stiff and a
+ * hand's worth of inertia on the far side. Shaft friction is on, because a
+ * joint that has none cannot be held still, and holding still is most of what
+ * a haptic joint does. */
+MechanicalParams mechanics_params_compliant_load() {
+    MechanicalParams mechanics{};
+    mechanics.load_inertia_kg_m2 = 1.5e-4;             /* ASSUMED, hand on a 30 mm knob */
+    /* Derived on day 4, not assumed: a 6 mm steel shaft over 40 mm is
+     * G J / L = 79.3e9 * 1.27e-10 / 0.04 = 250 N m/rad, and that is what holds a
+     * knob on a motor. The 0.9 N m/rad this table used to carry put the load's
+     * own resonance at 12 Hz, which caps the speed loop near 3 Hz on a joint
+     * that has to feel like something solid. See params.md for the arithmetic
+     * and the bring-up log for what the 0.9 did to the loop. */
+    mechanics.coupling_stiffness_nm_per_rad = 250.0;
+    /* A metal shaft over this length is barely damped: 2e-3 N m s/rad is a ratio
+     * of 0.04 on the coupled mode. ASSUMED, because no coupling has been
+     * measured, and the joint's own Coulomb friction is what actually damps it. */
+    mechanics.coupling_damping_nm_s_per_rad = 2.0e-3;
+    mechanics.coulomb_torque_nm = 8.0e-3;               /* ASSUMED, bearing and seal */
+    return mechanics;
+}
+
+/* The hand as well: a spring and a damper from the load to ground. The hand is
+ * not a mass on a bearing, it is a compliant thing that pushes back. */
+MechanicalParams mechanics_params_hand() {
+    MechanicalParams mechanics = mechanics_params_compliant_load();
+    mechanics.load_spring_nm_per_rad = 0.45;    /* ASSUMED, literature range for a hand */
+    mechanics.load_damping_nm_s_per_rad = 0.02; /* ASSUMED, same source */
+    return mechanics;
+}
+
+/* A wall at an angle, one sided, with no hand spring. Stiffness is 1.8 N m/rad
+ * against a 46 mNm/A motor, so the joint deflects visibly into it instead of
+ * being stopped dead by a number that is really an infinite constraint. */
+MechanicalParams mechanics_params_wall(double wall_angle_rad) {
+    MechanicalParams mechanics = mechanics_params_compliant_load();
+    mechanics.wall_angle_rad = wall_angle_rad;
+    mechanics.wall_stiffness_nm_per_rad = 1.8; /* ASSUMED, rigid wall on a 30 mm knob */
+    /* A hand braced against a wall is still a hand, so it still damps. Without
+     * this the load side has no dissipation at all and a rendered spring rings
+     * through the coupling forever. */
+    mechanics.load_damping_nm_s_per_rad = 0.02; /* ASSUMED, same row as the hand */
+    return mechanics;
+}
+
 InverterParams inverter_params_ideal() {
     InverterParams inverter{};
     inverter.instantaneous_switching = false;

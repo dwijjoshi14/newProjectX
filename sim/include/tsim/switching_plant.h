@@ -50,6 +50,7 @@ class SwitchingPlant final : public IPlant {
   private:
     PlantParams params_;
     InverterParams inverter_;
+    MechanicalSystem mechanics_;
     bool locked_ = false;
     double step_s_ = kPlantStepS;
     InverterCommand command_{};

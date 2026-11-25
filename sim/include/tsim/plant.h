@@ -6,6 +6,8 @@
 
 #include <cstdint>
 
+#include "tsim/mechanics.h"
+
 namespace tsim {
 
 inline constexpr std::uint64_t kPlantStepNs = 1000;      /* 1 MHz plant step, ns */
@@ -25,6 +27,10 @@ struct PlantParams {
     double inertia_kg_m2;                 /* rotor plus load, kg m^2, rotor frame */
     double viscous_friction_nm_s_per_rad; /* viscous friction, N m s/rad */
     double bus_voltage_v;                 /* DC link, V, inverter frame */
+    /* Everything past the shaft: coupling, load, hand, wall, backlash and
+     * Coulomb friction. All zero is one rigid body with viscous drag, which is
+     * exactly the model day 1 to day 3 used. */
+    MechanicalParams mechanics;
 };
 
 struct InverterCommand {
@@ -64,6 +70,13 @@ struct MechanicalState {
     double omega_rotor_rad_s;  /* rotor speed, rad/s, rotor frame */
     double torque_motor_nm;    /* torque produced this step, N m, rotor frame */
     double torque_external_nm; /* applied load torque, N m, rotor frame */
+    /* Day 4. With a rigid coupling the load fields equal the rotor fields. */
+    double theta_load_rad;      /* load side angle, rad */
+    double omega_load_rad_s;    /* load side speed, rad/s */
+    double torque_coupling_nm;  /* rotor into the load, N m */
+    double torque_hand_nm;      /* hand reaction on the load, N m */
+    double torque_wall_nm;      /* wall reaction on the load, N m */
+    double torque_coulomb_nm;   /* shaft friction this step, N m */
 };
 
 struct EnergyAccount {
@@ -72,6 +85,8 @@ struct EnergyAccount {
     double viscous_j;    /* energy lost to viscous friction, J */
     double mechanical_j; /* energy delivered to the rotor by the motor, J */
     double switching_j;  /* energy lost in the transition of the devices, J */
+    double coulomb_j;    /* energy lost to shaft friction, J */
+    double elastic_j;    /* stored in the coupling and the hand right now, J */
 };
 
 struct Telemetry {

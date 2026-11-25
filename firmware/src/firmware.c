@@ -52,6 +52,15 @@
  * have taken their 30. */
 #define FIRMWARE_SPEED_KP_A_PER_RAD_S 0.0313f
 #define FIRMWARE_SPEED_KI_A_PER_RAD_S2 2.95f
+#define FIRMWARE_SPEED_CROSSOVER_RAD_S 628.31853f /* 100 Hz, the design above */
+
+/* Both of those are for the motor's own rotor inertia, 2.3e-6 kg m^2, closing at
+ * 100 Hz. They are scaled at init by J_total / J_rotor and by the crossover the
+ * joint can take, because Kp = J wc / Kt and Ki = Kp wz are both proportional to
+ * J and to wc. Day 4 is why the second factor exists: a coupling that rings at
+ * 100 Hz cannot have a speed loop crossing at 100 Hz, and this firmware used to
+ * try, on a joint whose 0.05 N m s/rad of assumed coupling damping made the
+ * transmission look rigid enough that the mistake did not show. */
 
 /* Speed command filter, s. A step command on this loop arrives as a torque
  * step it cannot follow, and the answer is a 17 percent overshoot and a ring.
@@ -59,6 +68,21 @@
  * the voltage budget and costs 23 ms to reach 90 percent of a step, which is
  * still faster than a hand moves. */
 #define FIRMWARE_SPEED_REFERENCE_FILTER_S 0.010f
+
+/* Position loop, 1 kHz, proportional on position into the speed loop's
+ * reference. 157 per second is a 25 Hz crossover: the speed loop underneath
+ * holds to about 100 Hz, so at 25 Hz its own lag is small and the margin is
+ * near 80 degrees before the encoder. A position loop with no integral is
+ * enough because the speed loop already has one, which is what makes a cascade
+ * worth the trouble.
+ *
+ * The speed command is not passed through the 10 ms reference filter the speed
+ * mode uses: that filter is there to stop a step command exciting the speed
+ * loop, and a position loop's output is already smooth. Filtering it again
+ * would put a 16 Hz pole inside a 25 Hz loop. */
+#define FIRMWARE_POSITION_KP_PER_S 157.0f
+#define FIRMWARE_POSITION_MAX_SPEED_RAD_S 400.0f /* clamp on the cascade output, rad/s */
+#define FIRMWARE_POSITION_LIMIT_RAD 1.0e6f       /* beyond this the reference is wrong, rad */
 
 #define FIRMWARE_CONTINUOUS_CURRENT_A 2.74f /* datasheet continuous current, A */
 #define FIRMWARE_STALL_CURRENT_A 61.8f      /* datasheet stall current, A */
@@ -85,7 +109,14 @@ static float s_iq_reference_a;
 static float s_speed_command_rad_s;
 static float s_voltage_limit_v;
 static int64_t s_last_velocity_counts;
+static int64_t s_position_reference_counts;
 static uint32_t s_velocity_divider;
+static uint32_t s_position_divider;
+static float s_position_error_rad;
+static float s_position_kp_per_s;
+static float s_stiffness_nm_per_rad;
+static float s_damping_nm_s_per_rad;
+static float s_torque_constant_nm_per_a;
 static bool s_dead_time_compensation;
 static pi_regulator_t s_pi_d;
 static pi_regulator_t s_pi_q;
@@ -158,6 +189,21 @@ static int64_t firmware_counts(const hal_encoder_sample_t *encoder) {
     return counts - (int64_t)s_board->encoder_zero_offset_counts;
 }
 
+/* Radians to counts, rounded away from zero. C truncates toward zero, so the
+ * half count is added explicitly; writing it as a cast of (x + 0.5f) anyway
+ * would round a negative angle the wrong way, which is the kind of one count
+ * offset that turns into a position loop with a steady state error. */
+static int64_t firmware_rad_to_counts(float theta_rad) {
+    if (!(s_rad_per_count > 0.0f)) {
+        return 0;
+    }
+    const float counts = firmware_clamp(theta_rad, FIRMWARE_POSITION_LIMIT_RAD) / s_rad_per_count;
+    if (counts >= 0.0f) {
+        return (int64_t)(counts + 0.5f);
+    }
+    return (int64_t)(counts - 0.5f);
+}
+
 void firmware_init(void) {
     s_status.ticks = 0u;
     s_status.mode = FIRMWARE_MODE_OFF;
@@ -174,6 +220,12 @@ void firmware_init(void) {
     s_status.bus_v = 0.0f;
     s_status.dead_time_compensation = true;
     s_status.fault_bits = 0u;
+    s_status.position_rad = 0.0f;
+    s_status.position_ref_rad = 0.0f;
+    s_status.position_error_rad = 0.0f;
+    s_status.torque_ref_nm = 0.0f;
+    s_status.stiffness_nm_per_rad = 0.0f;
+    s_status.damping_nm_s_per_rad = 0.0f;
     s_offset_ia_a = 0.0f;
     s_offset_ib_a = 0.0f;
     s_offset_ic_a = 0.0f;
@@ -184,15 +236,20 @@ void firmware_init(void) {
     s_speed_command_rad_s = 0.0f;
     s_voltage_limit_v = 0.0f;
     s_last_velocity_counts = 0;
+    s_position_reference_counts = 0;
     s_velocity_divider = 0u;
+    s_position_divider = 0u;
+    s_position_error_rad = 0.0f;
+    s_position_kp_per_s = FIRMWARE_POSITION_KP_PER_S;
+    s_stiffness_nm_per_rad = 0.0f;
+    s_damping_nm_s_per_rad = 0.0f;
+    s_torque_constant_nm_per_a = 0.0f;
     s_dead_time_compensation = true;
 
     pi_init(&s_pi_d, FIRMWARE_CURRENT_KP_V_PER_A, FIRMWARE_CURRENT_KI_V_PER_A_S,
             FIRMWARE_CONTROL_PERIOD_S, 0.0f);
     pi_init(&s_pi_q, FIRMWARE_CURRENT_KP_V_PER_A, FIRMWARE_CURRENT_KI_V_PER_A_S,
             FIRMWARE_CONTROL_PERIOD_S, 0.0f);
-    pi_init(&s_pi_speed, FIRMWARE_SPEED_KP_A_PER_RAD_S, FIRMWARE_SPEED_KI_A_PER_RAD_S2,
-            FIRMWARE_VELOCITY_PERIOD_S, FIRMWARE_CONTINUOUS_CURRENT_A);
 
     if (hal_init() != HAL_OK) {
         hal_panic(1u, (uint32_t)__LINE__);
@@ -205,6 +262,78 @@ void firmware_init(void) {
         return;
     }
     s_rad_per_count = FIRMWARE_TWO_PI_RAD / (float)s_board->encoder_counts_per_rev;
+
+    /* Torque per amp, from the same two motor constants the feedforward uses.
+     * The impedance mode needs it and the firmware has no other place to get
+     * it: Kt is not a separate board config field, it is 1.5 p lambda. */
+    s_torque_constant_nm_per_a =
+        1.5f * (float)s_board->pole_pairs * s_board->motor_flux_linkage_wb;
+    if (!(s_torque_constant_nm_per_a > 0.0f)) {
+        hal_panic(3u, (uint32_t)__LINE__);
+        return;
+    }
+
+    /* Speed loop gains from the inertia the joint actually presents. A board
+     * that has not been told its load inertia gets the rotor alone, which is
+     * what day 2 measured and what day 1 to day 3 published. */
+    float inertia_ratio = 1.0f;
+    const float inertia_kg_m2 =
+        s_board->motor_inertia_kg_m2 + s_board->reflected_load_inertia_kg_m2;
+    if (s_board->motor_inertia_kg_m2 > 0.0f) {
+        inertia_ratio = inertia_kg_m2 / s_board->motor_inertia_kg_m2;
+    }
+
+    /* How fast this joint is allowed to close, which is not a preference. The
+     * hand on the coupling resonates at sqrt(k / J_load), the anti resonance,
+     * and that is the first thing in the plant that turns the loop's phase over.
+     * A velocity loop has to stay well below it; a quarter of it is the usual
+     * place to stop. With a rigid transmission the board reports no stiffness
+     * and the design 100 Hz stands, which is what day 1 to day 3 measured. With
+     * the day 4 handle on a steel shaft that anti resonance is 205 Hz, so the
+     * drive commissions itself to 51. */
+    float allowed_rad_s = FIRMWARE_SPEED_CROSSOVER_RAD_S;
+    if (s_board->coupling_stiffness_nm_per_rad > 0.0f &&
+        s_board->reflected_load_inertia_kg_m2 > 0.0f) {
+        const float anti_resonance_rad_s =
+            foc_sqrt(s_board->coupling_stiffness_nm_per_rad /
+                     s_board->reflected_load_inertia_kg_m2);
+        if (0.25f * anti_resonance_rad_s < allowed_rad_s) {
+            allowed_rad_s = 0.25f * anti_resonance_rad_s;
+        }
+    }
+
+    /* And how fast the sensor allows, which on a loaded joint is the tighter of
+     * the two. The velocity estimate is a difference of two encoder samples one
+     * velocity period apart, so its noise is sqrt(2) sigma / T. A speed loop
+     * multiplies that by its own Kp, and Kp is J wc / Kt, so the current the
+     * noise alone commands is J wc sigma_omega / Kt. Holding that to a tenth of
+     * continuous current gives the fastest loop this encoder can support. It is
+     * not a tuning preference: below this the noise current is smaller than the
+     * friction this joint has to overcome, and above it the loop drives the
+     * bridge with its own sensor noise. */
+    if (s_board->encoder_noise_rad > 0.0f && inertia_kg_m2 > 0.0f) {
+        const float velocity_noise_rad_s =
+            1.41421356f * s_board->encoder_noise_rad / FIRMWARE_VELOCITY_PERIOD_S;
+        const float sensor_limited_rad_s = 0.1f * FIRMWARE_CONTINUOUS_CURRENT_A *
+                                           s_torque_constant_nm_per_a /
+                                           (inertia_kg_m2 * velocity_noise_rad_s);
+        if (sensor_limited_rad_s < allowed_rad_s) {
+            allowed_rad_s = sensor_limited_rad_s;
+        }
+    }
+    const float crossover_ratio = allowed_rad_s / FIRMWARE_SPEED_CROSSOVER_RAD_S;
+
+    pi_init(&s_pi_speed, FIRMWARE_SPEED_KP_A_PER_RAD_S * inertia_ratio * crossover_ratio,
+            FIRMWARE_SPEED_KI_A_PER_RAD_S2 * inertia_ratio * crossover_ratio,
+            FIRMWARE_VELOCITY_PERIOD_S, FIRMWARE_CONTINUOUS_CURRENT_A);
+
+    /* The position loop sits a quarter of the way up the speed loop, which is
+     * the ratio the 157 per second was chosen with. If the joint's mechanics or
+     * its encoder take the speed loop down, the position loop comes down with it
+     * or the cascade stops being a cascade. */
+    s_position_kp_per_s = FIRMWARE_POSITION_KP_PER_S * crossover_ratio;
+    s_status.position_kp_per_s = s_position_kp_per_s;
+    s_status.speed_crossover_rad_s = allowed_rad_s;
 
     hal_pwm_enable(false);
     firmware_calibrate_current_offsets();
@@ -230,9 +359,21 @@ void firmware_set_mode(firmware_mode_t mode) {
     /* Start the slaved command where the shaft is, so the first tick after a
      * mode change is not a step. */
     s_speed_command_rad_s = s_status.omega_rad_s;
+    s_position_divider = 0u;
     pi_reset(&s_pi_d);
     pi_reset(&s_pi_q);
     pi_reset(&s_pi_speed);
+
+    /* Same idea for position: entering the mode holds the joint where it is
+     * instead of commanding a move to zero. A joint that jumps on a mode change
+     * is a joint somebody drops. */
+    hal_encoder_sample_t encoder;
+    if (hal_encoder_read(&encoder) == HAL_OK && encoder.valid) {
+        s_position_reference_counts = firmware_counts(&encoder);
+        s_position_error_rad = 0.0f;
+        s_status.position_error_rad = 0.0f;
+        s_status.position_ref_rad = (float)s_position_reference_counts * s_rad_per_count;
+    }
 }
 
 void firmware_set_current_reference_a(float iq_a) {
@@ -249,6 +390,21 @@ void firmware_set_speed_reference_rad_s(float omega_rad_s) {
 void firmware_set_dead_time_compensation(bool enable) {
     s_dead_time_compensation = enable;
     s_status.dead_time_compensation = enable;
+}
+
+void firmware_set_position_reference_rad(float theta_rad) {
+    s_position_reference_counts = firmware_rad_to_counts(theta_rad);
+    s_status.position_ref_rad = (float)s_position_reference_counts * s_rad_per_count;
+}
+
+void firmware_set_impedance(float stiffness_nm_per_rad, float damping_nm_s_per_rad) {
+    /* A negative spring would push the joint away from the handle, which is not
+     * a thing a haptic interface should do by accident. NaN fails both
+     * comparisons and lands on zero. */
+    s_stiffness_nm_per_rad = (stiffness_nm_per_rad >= 0.0f) ? stiffness_nm_per_rad : 0.0f;
+    s_damping_nm_s_per_rad = (damping_nm_s_per_rad >= 0.0f) ? damping_nm_s_per_rad : 0.0f;
+    s_status.stiffness_nm_per_rad = s_stiffness_nm_per_rad;
+    s_status.damping_nm_s_per_rad = s_damping_nm_s_per_rad;
 }
 
 void firmware_tick(void) {
@@ -280,10 +436,15 @@ void firmware_tick(void) {
     }
     s_status.current_peak_a = peak_a;
 
+    bool counts_valid = false;
+    int64_t counts_now = 0;
     if (hal_encoder_read(&encoder) == HAL_OK && encoder.valid) {
         const int64_t counts = firmware_counts(&encoder);
         const float theta_m_rad = (float)counts * s_rad_per_count;
         s_status.theta_e_rad = firmware_wrap_angle(theta_m_rad * (float)s_board->pole_pairs);
+        counts_now = counts;
+        counts_valid = true;
+        s_status.position_rad = theta_m_rad;
 
         /* The velocity loop runs every tenth tick. The estimate divides by the
          * nominal window rather than by the measured timestamp, so it carries
@@ -304,6 +465,16 @@ void firmware_tick(void) {
     s_voltage_limit_v = (bus_v > FIRMWARE_BUS_MIN_V)
                             ? FIRMWARE_LINEAR_MODULATION * FIRMWARE_ONE_OVER_SQRT3 * bus_v
                             : 0.0f;
+
+    /* The position error is computed in counts and only then converted, so a
+     * joint that has run a thousand turns does not lose the last counts to the
+     * mantissa of a float angle. The reference is absolute counts too, which is
+     * what a multiturn counter on a 14 bit encoder hands you. */
+    if (counts_valid) {
+        const int64_t error_counts = s_position_reference_counts - counts_now;
+        s_position_error_rad = (float)error_counts * s_rad_per_count;
+        s_status.position_error_rad = s_position_error_rad;
+    }
 
     const foc_rotor_t rotor = foc_rotor(s_status.theta_e_rad);
     const foc_alphabeta_t current_ab = foc_clarke((foc_phase_t){ia_a, ib_a, ic_a});
@@ -339,6 +510,34 @@ void firmware_tick(void) {
                 (s_speed_reference_rad_s - s_speed_command_rad_s) * filter_alpha;
             s_iq_reference_a = pi_step(&s_pi_speed, s_speed_command_rad_s - s_status.omega_rad_s);
         }
+    } else if (s_status.mode == FIRMWARE_MODE_POSITION) {
+        /* Position loop at 1 kHz writes the speed loop's reference; the speed PI
+         * keeps running at 2 kHz on whatever that reference last was, so the
+         * inner loop is not slowed down to the outer one's rate. On a tick where
+         * both run, the position update goes first. */
+        s_position_divider += 1u;
+        if (s_position_divider >= HAL_POSITION_DIVIDER) {
+            s_position_divider = 0u;
+            s_speed_command_rad_s =
+                firmware_clamp(s_position_kp_per_s * s_position_error_rad,
+                               FIRMWARE_POSITION_MAX_SPEED_RAD_S);
+            s_status.speed_command_rad_s = s_speed_command_rad_s;
+        }
+        if (speed_update) {
+            s_iq_reference_a = pi_step(&s_pi_speed, s_speed_command_rad_s - s_status.omega_rad_s);
+        }
+    } else if (s_status.mode == FIRMWARE_MODE_IMPEDANCE) {
+        /* A spring and a damper, at the full 20 kHz because that is what a
+         * haptic joint needs: the handle's impedance is the loop, and a slow one
+         * feels like a soft one. The damping term is only as good as the speed
+         * estimate multiplied into it, which is a ten tick difference behind the
+         * truth, so a stiff damper here lags. The observer that would fix that
+         * does not exist yet. */
+        const float torque_nm =
+            s_stiffness_nm_per_rad * s_position_error_rad - s_damping_nm_s_per_rad * s_status.omega_rad_s;
+        s_status.torque_ref_nm = torque_nm;
+        s_iq_reference_a =
+            firmware_clamp(torque_nm / s_torque_constant_nm_per_a, FIRMWARE_STALL_CURRENT_A);
     } else {
         s_iq_reference_a = s_current_reference_a;
     }

@@ -39,10 +39,15 @@ double dead_time_sign(double current_a, double linear_a) {
 } // namespace
 
 SwitchingPlant::SwitchingPlant(const PlantParams &params, const InverterParams &inverter)
-    : params_(params), inverter_(inverter) {}
+    : params_(params), inverter_(inverter) {
+    mechanics_.configure(params_.mechanics, params_.inertia_kg_m2,
+                         params_.viscous_friction_nm_s_per_rad);
+}
 
 void SwitchingPlant::configure(const PlantParams &params) {
     params_ = params;
+    mechanics_.configure(params_.mechanics, params_.inertia_kg_m2,
+                         params_.viscous_friction_nm_s_per_rad);
 }
 
 void SwitchingPlant::reset(double theta_rotor_rad) {
@@ -65,6 +70,7 @@ void SwitchingPlant::reset(double theta_rotor_rad) {
     p_mechanical_w_ = 0.0;
     steps_ = 0;
     energy_ = EnergyAccount{};
+    mechanics_.reset(theta_rotor_rad);
 }
 
 void SwitchingPlant::latch_inverter(const InverterCommand &command) {
@@ -255,14 +261,16 @@ void SwitchingPlant::step_one() {
         return;
     }
 
-    const double p_viscous_w =
-        params_.viscous_friction_nm_s_per_rad * omega_rotor_rad_s_ * omega_rotor_rad_s_;
-    energy_.viscous_j += p_viscous_w * step_s_;
-
-    const double torque_net_nm = torque_motor_nm_ - torque_external_nm_ -
-                                 params_.viscous_friction_nm_s_per_rad * omega_rotor_rad_s_;
-    omega_rotor_rad_s_ += (torque_net_nm / params_.inertia_kg_m2) * step_s_;
-    theta_rotor_rad_ += omega_rotor_rad_s_ * step_s_;
+    /* Same mechanics call as the ideal plant. A switching inverter and an
+     * average one have to agree about what the shaft does, or a day 4 result on
+     * one cannot be compared with a day 3 result on the other. */
+    const MechanicsStep step = mechanics_.step(step_s_, theta_rotor_rad_, omega_rotor_rad_s_,
+                                               torque_motor_nm_, torque_external_nm_);
+    theta_rotor_rad_ = step.theta_rotor_rad;
+    omega_rotor_rad_s_ = step.omega_rotor_rad_s;
+    energy_.viscous_j = mechanics_.readout().viscous_j;
+    energy_.coulomb_j = mechanics_.readout().coulomb_j;
+    energy_.elastic_j = mechanics_.readout().elastic_j;
     steps_ += 1;
 }
 
@@ -281,8 +289,19 @@ ElectricalReadout SwitchingPlant::sample_electrical() const {
 }
 
 MechanicalState SwitchingPlant::mechanical() const {
-    return MechanicalState{theta_rotor_rad_, omega_rotor_rad_s_, torque_motor_nm_,
-                           torque_external_nm_};
+    const MechanicsReadout &readout = mechanics_.readout();
+    const double theta_load_rad = locked_ ? theta_rotor_rad_ : readout.theta_load_rad;
+    const double omega_load_rad_s = locked_ ? 0.0 : readout.omega_load_rad_s;
+    return MechanicalState{theta_rotor_rad_,
+                           omega_rotor_rad_s_,
+                           torque_motor_nm_,
+                           torque_external_nm_,
+                           theta_load_rad,
+                           omega_load_rad_s,
+                           readout.torque_coupling_nm,
+                           readout.torque_hand_nm,
+                           readout.torque_wall_nm,
+                           readout.torque_coulomb_nm};
 }
 
 Telemetry SwitchingPlant::telemetry() const {
