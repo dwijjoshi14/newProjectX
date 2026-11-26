@@ -309,6 +309,96 @@ the order they matter:
   would need an impulse solver and would make the stiffness result different
   again.
 
+## Day 5 decisions
+
+- **The thermal network is two nodes with published numbers, and it is off by
+  default.** 2.27 K/W and 11.0 J/K from winding to housing, 8.17 K/W and 125 J/K
+  from housing to the bench, from the motor's two thermal resistances and its
+  24.9 s and 1020 s time constants. It is disabled in `PlantParams` by default
+  so that day 1 to day 4 stay bit identical, and the determinism test is what
+  proves it. A model that silently changes every earlier number is not an
+  addition, it is a rewrite.
+- **Copper loss is `1.5 I^2 R`.** Three phase currents of peak `I` give a mean
+  square of `1.5 I^2`. Using `3 I^2 R` doubles every thermal number and using
+  `I^2 R` halves them. The first cut here had a different bug in the same
+  expression and the bring-up log has it.
+- **The derating is a firmware policy and not a plant property.** The stall
+  envelope is scaled by `(130 - T) / 30`, so it equals the day 1 stall current
+  at 100 degC and reaches zero at 130 degC, and the drive latches
+  `HAL_FAULT_OVERTEMP` and opens the gates at 130. At ambient the policy is
+  exactly the 61.8 A the earlier days used, so nothing published moves. The
+  policy is arbitrary in the sense that a real drive would use the motor's own
+  thermal model; the point of putting it in the firmware is that the derating
+  happens inside the loop the plant closes, not outside it.
+- **The passivity observer runs always; the controller is opt in.** The observer
+  costs an energy accumulator and it is the thing that can report a render
+  generating. The controller is off by default because it changes the rendered
+  behaviour and a twin that quietly damps its plant is not showing the plant.
+  `firmware_set_passivity_control` is the switch and the run records its state.
+- **The passivity correction is clamped to what the motor can make, and the
+  observer is charged for what was applied.** The first version computed a
+  damping from the whole energy deficit, applied a torque of 290 N m from a
+  2.85 N m motor, and then subtracted the energy as if it had been delivered.
+  That is a controller that reports itself passive because it is lying about the
+  plant, and it is the most instructive bug of the week. A one port observer can
+  only account for effort times flow at its own port, so the correction has to
+  be the applied torque or the account is fiction.
+- **One port PO/PC, deliberately, with the limitation published.** A two port
+  version is the correct instrument for a bilateral pair and it is not in the
+  seven days. The choice is stated in the results with the measurement that
+  shows what it costs: it damps the symptom where the loop is only just active
+  and does nothing where the delay dominates.
+- **The far joint is mechanics, not a second firmware instance.** `hal.h` is a
+  single MCU contract: one encoder, one set of phase currents, one bridge. Two
+  drives means two processes and a real socket, which is day 6. The far side is
+  the same `IPlant` with the bridge open, driven by link torque clamped at
+  stall, and the day's bilateral number is therefore about the master's render
+  and the link.
+- **The link drops and jitters with its own generator.** A 256 slot delay line,
+  newest arrived wins, with an xorshift for jitter and loss so a run repeats and
+  a unit test can predict the pattern without a library. Loss is independent per
+  sample, which is not how a real link loses packets, and the results say so.
+- **The efficiency map is taken at a stated winding temperature and not by
+  soaking the network.** Scaling `resistance_phase_ohm` by
+  `thermal_copper_multiplier` gives a map at a temperature the figure states.
+  Soaking would make every point depend on how long that point ran, which is a
+  different experiment and a worse one.
+- **The stability boundary is measured as generated power, not as a limit
+  cycle.** `-min(excess) / run` from the observer in the firmware, with 10 mW as
+  the line. A limit cycle threshold needs a definition of amplitude that nobody
+  agrees on; energy has a definition.
+
+## Day 5 status and what was cut
+
+A winding that heats, a drive that derates and trips on it, an efficiency map at
+a stated temperature, and two joints over a link with a passivity observer and
+an optional controller. The two numbers worth carrying forward are that a 20 A
+stall reaches the insulation limit in 7.4 s and that the render generates 19.7 W
+at 2 ms and 70 N m/rad. Cut or deferred, in the order they matter:
+
+- The far joint has no drive of its own. The bilateral result is one real
+  firmware instance talking to a plant, not two drives negotiating, and a real
+  pair would also have two sets of encoder quantisation and two clocks.
+- No two port passivity and no energy tank. The one port observer bounds the
+  energy it returns and cannot stabilise a delayed loop, which the day measures
+  rather than argues.
+- The link is a constant delay with per sample jitter and loss. No
+  packetisation, no bursts, no reordering, no protocol, no timeouts, and no
+  drift between the two clocks.
+- The thermal model is two lumps. No axial gradient, no magnet temperature, no
+  bearing temperature, no speed dependence in the convection, no water cooling,
+  and the torque constant does not drift with temperature even though the
+  resistance does.
+- The derating policy is a straight line chosen here. A drive that shipped this
+  would use the motor's thermal model to predict the winding rather than
+  measure it, because the sensor inside a winding is the slowest part of the
+  chain.
+- The efficiency map is one temperature and one bus voltage, and it includes
+  the sensing chain but not the cable.
+- Nothing here has been compared with a real joint. The thermal resistances are
+  published and the network is a standard two lump, and a bench would settle
+  whether the second time constant is the housing or the mount.
+
 ## Method notes
 
 - Tests are written before the feature. The day 1 plant tests came before any

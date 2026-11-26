@@ -126,5 +126,32 @@ is a longer list of things that a switching model still does not say.
 - Mechanical compliance beyond the two mass lump.
 - Sensor non linearity beyond the stated gain and offset error.
 
+## What the thermal model does not have
+
+- Two lumps and no spatial resolution. A real winding has an axial gradient and
+  a hot spot at the end turns, so a measured 155 degC average is a 170 degC
+  spot, and the model cannot say that.
+- The magnet, the bearing and the lubricant have no temperature, so the torque
+  constant does not fall as the magnets heat and the grease does not thin.
+- The convective resistance is constant. It is not, it depends on speed, on
+  orientation, on whether anything is bolted to the housing, and on the air in
+  the room.
+- Resistance is linear in temperature with one coefficient. Real copper is
+  close, and the connection and the winding are not the same temperature.
+- One ambient, applied to the housing. A joint in a box, a joint next to a
+  second warm joint, and a joint on a cold plate all have different boundaries.
+- No ageing. Thermal cycling, insulation fatigue and bearing life are not in
+  the model and cannot be inferred from it.
+
+## What the delayed link does not have
+
+- One constant delay per direction with jitter and independent per sample loss.
+  A real link has packetisation, bursts of loss, reordering, and two clocks that
+  drift apart.
+- No protocol. No sequence numbers, no acknowledgement, no interpolation of
+  late samples, no timeout behaviour, and the far side never asks for anything.
+- The far joint has mechanics and no drive, so the pair cannot disagree about
+  an encoder, and a real pair would.
+
 Each of these is listed again in `docs/validation-plan.md` with the instrument
 that would measure it and the order in which it should be checked on hardware.

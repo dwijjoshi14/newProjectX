@@ -4,13 +4,27 @@ A switching level digital twin of a haptic robot joint, with field oriented
 control firmware running inside it unmodified. No hardware, no cloud, one
 machine.
 
-**Status: day 4 of 7. One motor drives a two mass joint through a steel shaft
+**Status: day 5 of 7. One motor drives a two mass joint through a steel shaft
 with backlash, with a hand and a wall on the far side, in position and in
-impedance.** The firmware is the same unmodified FOC code, now with a position
-cascade and a 20 kHz impedance mode, and it commissions its own loop gains from
-the plant it is attached to and the encoder it is reading. There is no second
-joint, no cable and no thermal model yet. Every number in this repository is
-simulated, and the figures say so on their face.
+impedance, and now with a winding that heats and a second joint over a link that
+arrives late.** The firmware is the same unmodified FOC code, with a position
+cascade, a 20 kHz impedance mode, a derating curve driven by the winding
+temperature and a passivity observer in impedance mode. The first joint is the
+real plant and the real firmware; the far joint is the same mechanics with no
+drive of its own, which is the day's largest cut. Every number in this
+repository is simulated, and the figures say so on their face.
+
+![Winding temperature, simulated](docs/figures/day5_thermal.png)
+
+A stall is a duration now, not a torque. A 20 A stall on a clamped rotor from a
+25 degC bench puts the winding through 100 degC in 4.4 s and through the 155 degC
+insulation limit in 7.4 s, while the housing is still at 56 degC. The firmware
+derates its own stall envelope from 100 degC down to a 130 degC trip, and a 24 s
+run of the closed loop asked for 20 A and settled at 126 degC and 8.2 A without
+latching a fault, because a proportional derating finds its own equilibrium
+below the trip. Two joints over a 2 ms link at 70 N m/rad make the render
+generate 19.7 W, and the one port passivity controller takes that to 2.7 W while
+not moving the stability boundary at all.
 
 ![Position loop frequency response, simulated](docs/figures/day4_position_bode.png)
 
@@ -77,6 +91,9 @@ ctest --preset asan --output-on-failure
 Requirements: a C11 and C++20 compiler, CMake 3.22 or newer, Ninja, and Python
 3 for the size check. The plotting tool additionally wants numpy and matplotlib
 (`requirements.txt`).
+
+To reproduce the day 5 figures, `python3 tools/plot_day5.py --commit <sha>`
+after the runs listed in `docs/results.md`.
 
 To reproduce the day 4 figures:
 

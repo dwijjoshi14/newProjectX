@@ -283,6 +283,62 @@ is worse than no flag, because a run that looks like a sweep of stiffness is
 not one. Applied now, and the summary line prints the coupling the plant is
 actually using rather than the one the preset asked for.
 
+## 2026-11-26, day 5
+
+**Entry 35, the thermal inversion returned the square of the current.**
+`thermal_current_for_winding_c` solved the loss balance for current and returned
+the square of it, so the derating table said a 25 degC bench allowed 18.6 A
+instead of 4.32 and the runaway current came out at 55.8 A instead of 7.47. The
+test that caught it asserted a value, not a shape, and that is why it caught it:
+a square looks plausible in a table. Two missing `std::sqrt` calls, and the
+lesson is that an inversion function needs a round trip test that puts the
+answer back through the forward function.
+
+**Entry 36, the passivity controller counted energy it never delivered.** It
+computed a damping from the whole energy deficit, multiplied by the rotor speed,
+and got 290 N m out of a 2.85 N m motor. The torque then went through the
+current clamp and the joint carried on at the limit, while the observer
+subtracted the full `beta omega^2 dt` and reported an excess of -0.09 J, which
+reads as passive. The trace is what exposed it: `torque_master_nm` at -290 next
+to a 2.85 N m stall. Fixed by clamping the correction to stall torque and
+charging the observer for the torque actually applied. The consequence is
+honest and worse looking: the generated power column in `docs/results.md` went
+from small numbers to hundreds of watts, because the earlier numbers were the
+lie. A control test that asserted the controlled run generated less had to be
+deleted rather than tuned, because in that test the reference is the joint's own
+past angle and the controller changes the trajectory, so the assertion was not
+even meaningful.
+
+**Entry 37, the efficiency grid measured a joint being back driven.** The first
+torque list ran to 0.13 N m, which is above the datasheet continuous torque and
+above the speed PI's output limit of 2.74 A, so the top row of the map was the
+drive saturating and the load dragging the joint. The efficiency at the top
+torque came out above the one below it, which is not a thing that happens. The
+grid now runs 0.02 to 0.12 N m and every point is inside the continuous rating.
+
+**Entry 38, the bilateral study railed its own current on the damping term.**
+The impedance mode multiplies the rendered damping by rotor speed, and through
+the 7:1 gearbox the rotor turns seven times the output, so 0.2 N m s/rad at a
+seeded 20 mrad of stretch asked for more torque than the bridge could make and
+the first study was measuring its own clamp. Damping reduced to 0.02 and the
+seeded stretch reduced, and the amplitude table now starts where the loop is
+linear.
+
+**Entry 39, the stub HAL kept its temperature between tests.** The stub's
+temperature is process state, the new thermal tests left it at 131 degC, and the
+firmware test that runs a tick against the stub then latched an over
+temperature fault and failed on a fault word it had never asked about. Test
+order dependence of this kind is the worst sort, because it passes alone and
+fails in the suite. The test sets 25 degC at the top now, which is the same
+principle as every other stub reset in this project.
+
+**Entry 40, clang-tidy had opinions the code did not have to earn.** Signed
+operand with a bitwise operator on the fault masks and on the delay line's
+xorshift, and a floating point loop counter in the derating table. The fault
+bits became `(1u << Nu)` in `hal.h` and the ambient sweep became an integer
+index. Worth noting that the local clang-tidy is stricter than the one CI ran on
+day 4, so a green run there is not evidence about the code.
+
 ## Template for later entries
 
 ```

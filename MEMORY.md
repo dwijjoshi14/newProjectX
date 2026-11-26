@@ -93,3 +93,39 @@ Durable decisions and corrections. Newest last.
   command at 1 N m/rad and 30 percent at 4, and the series arithmetic with the
   250 N m/rad shaft and the 1.8 N m/rad wall predicts both to better than 2
   percent. Publish the ratio, not the command.
+
+## 2026-11-26, day 5
+
+- 2026-11-26 the datasheet continuous current is a hot ambient rating, not a
+  conservative one. 2.74 A settles at 65.3 degC on a 25 degC bench, reaches the
+  155 degC limit at 102.6 degC ambient, and the motor is rated to 100. Above
+  7.472 A no steady state exists at any ambient because copper resistance rises
+  0.393 percent per K. The derating curve runs 4.400 A at 20 degC to 2.808 at
+  100.
+- 2026-11-26 a 20 A stall is 4.41 s to 100 degC and 7.39 s to 155 degC on a
+  clamped rotor, with the housing still at 56 degC when the winding is at 730.
+  The second node is not decoration: a drive that watched the housing would see
+  nothing.
+- 2026-11-26 a proportional derating self regulates. Asked for 20 A for 24 s the
+  drive ended at 126.0 degC and 8.236 A with no fault, because the envelope is
+  linear in temperature and the equilibrium sits under the trip. The 130 degC
+  latch therefore needs a hot start or a slow sensor to appear, and it is only
+  covered by the stub HAL test.
+- 2026-11-26 the passivity controller was counting energy it never delivered,
+  commanding 290 N m from a 2.85 N m motor and reporting minus 0.09 J while the
+  joint shook at the current limit. Clamped to stall torque and charged only for
+  the torque applied. Every generated power number before that fix was fiction.
+- 2026-11-26 one port passivity does what it says and not what people hope. It
+  takes 7 to 13 times out of the generated power where the loop is only just
+  active (19.7 W to 2.74 W at 2 ms and 70 N m/rad), is worth nothing once the
+  delay dominates (938 to 852 W at 8 ms), never moves a boundary in the grid,
+  and can make a passive pair active at 8 ms with a soft render.
+- 2026-11-26 the efficiency map is 26 to 99 percent between 20 rad/s and
+  400 rad/s at a 100 degC winding, and the inverter is the largest loss below a
+  tenth of a newton metre: at 20 rad/s and 20 mN m the dead time and device drop
+  cost 0.15 W against 0.11 W of copper. The dead time error is 0.36 V per leg at
+  36 V and 20 kHz.
+- 2026-11-26 a flexible shaft is not simply worse than a rigid one over a
+  delayed link. At 8 ms and 20 N m/rad the 250 N m/rad shaft generates 70.6 W
+  where a rigid one generates 0.3 mW, and at 0.5 ms the rigid one is the better
+  of the two. Reported, not explained: a two port analysis is day 6.

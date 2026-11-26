@@ -102,6 +102,9 @@ parameter is a limit on what the model can claim.
 | wall stiffness | 1.8 N m/rad | rigid wall on a 30 mm knob |
 | network delay, jitter, loss | 2 ms, 1 ms, 0.5 percent | swept, not fixed, in rung 7 |
 | junction to case resistance | 1.5 K/W | not published |
+| copper temperature coefficient | 0.00393 per K at 20 degC | ASSUMED, the standard value for annealed copper, not from the motor datasheet |
+| derating start, trip | 100 degC, 130 degC | firmware policy, chosen so the trip is 25 K under the 155 degC insulation limit |
+| generated power line | 10 mW | ASSUMED, the level below which the observer's own noise floor sits |
 | ambient | 25 degC | bench |
 
 ## Handling rules

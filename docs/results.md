@@ -4,10 +4,234 @@ A spec sheet of simulated numbers, each with its method and the commit that
 produced it. No measured number appears in this file, because nothing has been
 measured. Every row can be regenerated from the commit beside it.
 
-Status: day 4 of 7. One motor driving a two mass joint through a steel shaft
+Status: day 5 of 7. One motor driving a two mass joint through a steel shaft
 with backlash, with a hand and a wall on the far side, in position and in
-impedance. The firmware compensates dead time, feeds forward the cross coupling
-and back EMF, and commissions its own loop gains from the plant and the sensor.
+impedance, now with a winding that heats and a second joint over a link that
+arrives late and sometimes does not arrive. The firmware derates its own stall
+envelope with temperature, latches a fault above 130 degC, and runs a passivity
+observer in impedance mode.
+
+## Day 5 results
+
+Three questions: how long a stall is, what the drive converts at a stated
+winding temperature, and where two joints over a delayed link stop being a
+passive pair.
+
+![Winding temperature and the derating curve, simulated](figures/day5_thermal.png)
+
+### The thermal network, and what a stall is worth
+
+Two nodes, published values: 2.27 K/W and 11.0 J/K from winding to housing,
+8.17 K/W and 125 J/K from housing to the bench, the heat capacities being the
+datasheet's 24.9 s and 1020 s thermal time constants times those resistances.
+Copper loss is `1.5 I^2 R`, not `3 I^2 R`, because three sinusoids of peak `I`
+sum to a mean square of `1.5 I^2`; the day 5 loss number was wrong by a factor
+of two in the first cut and the bring-up log has it.
+
+| Ambient, degC | Steady current that reaches 155 degC |
+|---|---|
+| 20 | 4.400 A |
+| 30 | 4.233 A |
+| 40 | 4.061 A |
+| 50 | 3.880 A |
+| 60 | 3.691 A |
+| 70 | 3.491 A |
+| 80 | 3.279 A |
+| 90 | 3.053 A |
+| 100 | 2.808 A |
+
+Above 7.472 A no steady state exists at any ambient: copper resistance rises
+0.393 percent per kelvin, the loss rises with it, and past that current the loss
+grows faster than the temperature difference can carry it away. That is a
+property of the two published resistances and not a policy, and it is the number
+that makes a stall a duration rather than a torque.
+
+The datasheet continuous current turns out to be a hot ambient rating rather
+than a conservative one. Held at 2.74 A on a 25 degC bench the winding settles
+at 65.3 degC, which is 90 K of headroom, and the same current only reaches the
+insulation limit at 102.6 degC ambient, above the 100 degC the motor is rated
+for. At 100 degC ambient it runs at 152.0 degC. The rating is honest, and the
+derating curve above is what the drive would need to respect it.
+
+A 20 A stall on a clamped rotor, network alone, from 25 degC:
+
+| Quantity | Value |
+|---|---|
+| winding reaches 100 degC | 4.410 s |
+| winding reaches 155 degC | 7.390 s |
+| winding at 30 s | 730.6 degC |
+| housing at 30 s | 56.5 degC |
+
+The gap between the last two rows is the point of a second node. The housing is
+still cold when the winding is glowing, so a drive that measures the housing
+would see nothing wrong, and the difference between a one node and a two node
+model here is the difference between a plausible graph and the right one.
+
+The same stall in the closed loop, real firmware, 24 s of it:
+
+| Quantity | Value |
+|---|---|
+| winding, final | 126.0 degC |
+| current envelope, final | 8.236 A |
+| electrical energy drawn | 2243.7 J |
+| of which copper | 2009.7 J (89.6 percent) |
+| switching | 38.3 J |
+| faults latched | none |
+
+The drive was asked for 20 A and ended at 8.2 A, because the envelope is linear
+from the 61.8 A stall at 100 degC down to zero at 130 degC, and at 126 degC that
+leaves 8.2. It settles there and does not latch: the policy is a proportional
+regulator and it finds its own equilibrium below the trip. The trip is a
+backstop for a sensor that is slow or a winding that is already hot at boot, and
+it is covered by a firmware test that puts the stub HAL at 131 degC, not by this
+run. Saying that plainly matters, because "the drive protected itself" would be
+a weaker claim than the one the run supports.
+
+### Efficiency at a stated winding temperature
+
+![Efficiency map, simulated](figures/day5_efficiency.png)
+
+Winding resistance scaled to 100 degC, `0.291 ohm x 1.3144 = 0.3825 ohm`, the
+thermal network off, sensing chain on, 500 ns dead time, switching plant. This
+is a map at a stated temperature and not a soak, and the figure says so.
+
+| Load torque | Efficiency at 20 rad/s | Best, at 400 rad/s |
+|---|---|---|
+| 20 mN m | 55.4 percent | 99.3 percent |
+| 50 mN m | 40.3 percent | 94.4 percent |
+| 80 mN m | 34.2 percent | 91.9 percent |
+| 100 mN m | 31.2 percent | 90.5 percent |
+| 120 mN m | 26.5 percent | 88.7 percent |
+
+The map runs from 26 to 99 percent and the shape is not the one a datasheet
+draws, because the losses are not a single term. At 100 rad/s and 120 mN m the
+input is 17.7 W, of which 11.9 W reaches the shaft, 3.3 W is copper, 1.7 W is
+device drop and dead time, and the rest is switching and the bearing. At
+20 mN m the copper is 0.11 W and the dead time and device drop are 0.15 W, so
+above a tenth of a newton metre the inverter is the largest loss and the winding
+is a rounding error.
+
+The unaccounted term, meaning everything the link delivered that did not reach
+the winding or the shaft, is +0.15 to +1.70 W across the low speed column and
+-0.19 W at 400 rad/s and 20 mN m. The negative value is the model
+over-accounting at high speed and low torque, which is honest to publish: the
+dead time error is 0.36 V per leg at 36 V and 20 kHz, and at 2.18 A that is
+1.6 W if both legs are wrong, against 1.40 W measured at 100 rad/s and 100 mN m.
+
+### Two joints over a link that arrives late
+
+![Stability boundary, simulated](figures/day5_stability.png)
+
+Master is the switching plant with the unmodified firmware in impedance mode,
+the far joint is the same mechanics with the bridge open and the link torque as
+an external torque, clamped at stall. 20 mrad of initial stretch, 20 mN m s/rad
+of damping, 1 ms of jitter and 0.5 percent loss each way. Generated power is
+`-min(excess) / 0.5 s` from the passivity observer in the firmware, so it is the
+render's own measurement of what it returned to the user, not a model of it.
+
+Rendered stiffness against one way delay, generated power in watts, 250 N m/rad
+shaft, controller off:
+
+| Stiffness | 0.5 ms | 1 ms | 2 ms | 4 ms | 8 ms |
+|---|---|---|---|---|---|
+| 20 N m/rad | 0.0003 | 0.0003 | 0.0003 | 0.0003 | 70.6 |
+| 40 | 0.0006 | 0.0006 | 1.21 | 137 | 459 |
+| 70 | 0.0008 | 0.0009 | 19.7 | 329 | 938 |
+| 100 | 0.0133 | 0.0122 | 32.1 | 500 | 1580 |
+| 150 | 0.0713 | 0.0499 | 82.9 | 829 | 2250 |
+| 220 | 0.293 | 0.697 | 132 | 1260 | 3910 |
+| 320 | 0.761 | 2.64 | 202 | 1780 | 5350 |
+
+Taking 10 mW as the line where a render is generating rather than just noisy,
+the boundary sits at 100 N m/rad for 0.5 and 1 ms, at 70 for 2 ms, at 40 for
+4 ms, and at 20 for 8 ms. Above the line it is not marginal: at 2 ms and
+70 N m/rad the render returns 19.7 W to a user who is trying to feel a wall.
+
+With a rigid transmission the boundary at half a millisecond moves out to
+220 N m/rad and at one millisecond to 70, because a stiff shaft puts the joint's
+own resonance high enough that the delay has less to push against. But the
+flexible joint is not simply worse: at 8 ms and 20 N m/rad it generates 70.6 W
+where the rigid one generates 0.3 mW. The shaft adds a second resonance and the
+delay can walk one of them up. That reversal is reported and not explained,
+because explaining it would take a two port analysis that is day 6 work.
+
+The passivity controller, at 2 ms and 70 N m/rad:
+
+| Case | Generated, controller off | On |
+|---|---|---|
+| 2 ms, 70 N m/rad | 19.7 W | 2.74 W |
+| 2 ms, 100 N m/rad | 32.1 W | 6.77 W |
+| 4 ms, 40 N m/rad | 137 W | 48 W |
+| 8 ms, 70 N m/rad | 938 W | 852 W |
+| 8 ms, 20 N m/rad | 0.3 mW | 1.78 W |
+
+So the controller takes a factor of seven to thirteen out of the generated power
+in the regime where the loop is only just active, does essentially nothing once
+the delay dominates, does not move any boundary in the grid, and at 8 ms with a
+soft render it makes a passive pair active. This is the measured limitation of a
+one port passivity observer, and it is the day's finding rather than a bug: a
+controller that can only see the effort and flow at its own port can bound the
+energy it returns, and cannot know that the thing it is coupled to is itself
+delayed. Bounding returned energy is necessary and is not stability.
+
+The first version of the controller was worse than limited, it was lying. It
+asked for 290 N m from a 2.85 N m motor and then subtracted the energy as if the
+torque had been delivered, so it reported itself passive to within 0.09 J while
+the joint carried on at the current limit. The fix is that the correction is
+clamped to stall torque and the observer is charged for the torque that was
+actually applied, which is why the table above shows large numbers where the
+earlier version showed small ones.
+
+### What was cut, and the largest one
+
+The far joint is mechanics, not firmware. `hal.h` is a contract with one MCU:
+one set of phase currents, one encoder, one bridge. A second joint with its own
+drive means a second process and a real network between them, which is day 6.
+So the far side here is the same `IPlant` mechanics with the bridge open, driven
+by link torque clamped at stall, and the bilateral result is about the master's
+render and the link, not about two drives negotiating.
+
+Also cut, in the order they matter: no two port passivity, no energy tank with a
+refill path from something known to be passive, no packetisation or burst loss
+(the link is a constant delay with jitter and independent per sample loss), no
+magnet temperature so the torque constant does not drift, no dependence of the
+convective resistance on speed, and no housing sensor, so the ambient is the
+housing's boundary by construction.
+
+## Reproduce day 5
+
+```sh
+cmake --preset dev
+cmake --build --preset dev -j
+
+# the derating curve and the two soaks
+./build/dev/harness/tsim_thermal --derating
+./build/dev/harness/tsim_thermal --soak --current 2.74 --seconds 1500 \
+  --out data/run_latest/day5_soak_continuous.csv
+./build/dev/harness/tsim_thermal --soak --current 20 --seconds 30
+
+# the 20 A stall through the real firmware, 24 s
+./build/dev/harness/tsim_harness --scenario thermal_soak --out data/run_latest/day5_thermal_soak.csv
+
+# the efficiency map at a stated winding temperature
+./build/dev/harness/tsim_efficiency
+
+# the stability boundary, two transmissions, both controller states
+./build/dev/harness/tsim_bilateral --shaft-stiffness 250 \
+  --out data/run_latest/day5_stability_250.csv
+./build/dev/harness/tsim_bilateral --shaft-stiffness 5000 \
+  --out data/run_latest/day5_stability_rigid.csv
+
+# the two traces in the bottom panel
+./build/dev/harness/tsim_bilateral --stiffness-list 70 --delay-list 2 --shaft-stiffness 250 \
+  --trace --trace-passivity off --trace-stiffness 70 --trace-delay-ms 2 \
+  --trace-out data/run_latest/day5_bilateral_pc_off.csv
+./build/dev/harness/tsim_bilateral --stiffness-list 70 --delay-list 2 --shaft-stiffness 250 \
+  --trace --trace-passivity on --trace-stiffness 70 --trace-delay-ms 2 \
+  --trace-out data/run_latest/day5_bilateral_pc_on.csv
+
+python3 tools/plot_day5.py --commit "$(git rev-parse --short HEAD)"
+```
 
 ## Day 4 results
 
