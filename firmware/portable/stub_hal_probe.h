@@ -12,6 +12,11 @@
 extern "C" {
 #endif
 
+/* Winding temperature the stub reports, degC. Tests that exercise the thermal
+ * derating and the over temperature latch move this instead of running a
+ * simulation long enough to heat a real winding. */
+void hal_stub_set_temperature_c(float temperature_c);
+
 /* Duty written for one phase, duty. 0 to 2, out of range returns 0. */
 float hal_stub_last_duty(uint32_t phase_index);
 

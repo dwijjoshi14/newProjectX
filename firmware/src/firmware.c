@@ -92,6 +92,26 @@
  * the name of removing it. Half the predicted 1.76 A ripple is the point where
  * the sign starts to be trustworthy. */
 #define FIRMWARE_DEAD_TIME_LINEAR_A 0.5f
+
+/* Thermal. The winding's insulation limit is 155 degC and the drive opens its
+ * gates 25 K below it, because a sensor that reads the average winding is not
+ * the hottest turn and a control that only acts at the limit has no margin to
+ * act in. Between 100 and 130 degC the current envelope falls linearly from
+ * stall to nothing, which is not a derating curve: it is the envelope pulled
+ * down so that a drive already too hot cannot be asked for a peak. The
+ * derating curve for continuous operation is a property of the machine and it
+ * is computed from the network in docs/results.md, not from this constant. */
+#define FIRMWARE_OVERTEMP_LIMIT_C 130.0f       /* 155 degC insulation minus 25 K */
+#define FIRMWARE_THERMAL_DERATE_START_C 100.0f /* where the envelope starts to fall */
+#define FIRMWARE_THERMAL_DIVIDER 100u          /* temperature read at 200 Hz, ticks */
+
+/* Passivity controller. The damping is the excess energy divided by the speed
+ * squared and the tick, which is the amount that dissipates exactly the excess
+ * in one tick. The cap matters: a speed near zero makes that division
+ * singular, and an uncapped beta would ask for a torque the drive cannot
+ * produce and call the result passive. */
+#define FIRMWARE_PASSIVITY_MAX_DAMPING 50.0f /* N m s/rad */
+#define FIRMWARE_PASSIVITY_MIN_SPEED_SQUARED 1.0e-6f
 #define FIRMWARE_LINEAR_MODULATION 0.95f /* fraction of bus / sqrt(3) used */
 #define FIRMWARE_ONE_OVER_SQRT3 0.57735027f
 #define FIRMWARE_BUS_MIN_V 6.0f     /* below this the gate holds the zero vector, V */
@@ -118,6 +138,13 @@ static float s_stiffness_nm_per_rad;
 static float s_damping_nm_s_per_rad;
 static float s_torque_constant_nm_per_a;
 static bool s_dead_time_compensation;
+static float s_temperature_c;
+static float s_thermal_limit_a;
+static uint32_t s_thermal_divider;
+static bool s_passivity_enabled;
+static float s_passivity_energy_j;
+static float s_passivity_excess_j;
+static float s_passivity_damping_nm_s_per_rad;
 static pi_regulator_t s_pi_d;
 static pi_regulator_t s_pi_q;
 static pi_regulator_t s_pi_speed;
@@ -151,6 +178,20 @@ static float firmware_clamp(float value, float limit) {
         return -limit;
     }
     return value;
+}
+
+/* The current envelope at a winding temperature, A. At a bench temperature
+ * this is the stall current and it changes nothing, which is why day 1 to day 4
+ * results do not move when this arrives. */
+static float firmware_thermal_limit(float temperature_c) {
+    if (!(temperature_c > FIRMWARE_THERMAL_DERATE_START_C)) {
+        return FIRMWARE_STALL_CURRENT_A;
+    }
+    if (!(temperature_c < FIRMWARE_OVERTEMP_LIMIT_C)) {
+        return 0.0f;
+    }
+    return FIRMWARE_STALL_CURRENT_A * (FIRMWARE_OVERTEMP_LIMIT_C - temperature_c) /
+           (FIRMWARE_OVERTEMP_LIMIT_C - FIRMWARE_THERMAL_DERATE_START_C);
 }
 
 /* Average the phase current offsets with the bridge off. A, phase frame.
@@ -226,6 +267,18 @@ void firmware_init(void) {
     s_status.torque_ref_nm = 0.0f;
     s_status.stiffness_nm_per_rad = 0.0f;
     s_status.damping_nm_s_per_rad = 0.0f;
+    s_status.temperature_c = 0.0f;
+    s_status.thermal_limit_a = FIRMWARE_STALL_CURRENT_A;
+    s_status.passivity_energy_j = 0.0f;
+    s_status.passivity_excess_j = 0.0f;
+    s_status.passivity_damping_nm_s_per_rad = 0.0f;
+    s_temperature_c = 0.0f;
+    s_thermal_limit_a = FIRMWARE_STALL_CURRENT_A;
+    s_thermal_divider = 0u;
+    s_passivity_enabled = false;
+    s_passivity_energy_j = 0.0f;
+    s_passivity_excess_j = 0.0f;
+    s_passivity_damping_nm_s_per_rad = 0.0f;
     s_offset_ia_a = 0.0f;
     s_offset_ib_a = 0.0f;
     s_offset_ic_a = 0.0f;
@@ -271,6 +324,15 @@ void firmware_init(void) {
         hal_panic(3u, (uint32_t)__LINE__);
         return;
     }
+
+    /* One temperature read at boot, so the envelope is right before the first
+     * 5 ms has passed. A board whose thermistor is not wired reads ambient and
+     * gets the stall current, which is the honest answer for a sensor that says
+     * nothing. */
+    s_temperature_c = hal_temperature_read_c();
+    s_thermal_limit_a = firmware_thermal_limit(s_temperature_c);
+    s_status.temperature_c = s_temperature_c;
+    s_status.thermal_limit_a = s_thermal_limit_a;
 
     /* Speed loop gains from the inertia the joint actually presents. A board
      * that has not been told its load inertia gets the rotor alone, which is
@@ -354,6 +416,12 @@ void firmware_start(void) {
 void firmware_set_mode(firmware_mode_t mode) {
     s_status.mode = mode;
     s_iq_reference_a = 0.0f;
+    /* A passivity observer carries no energy across a mode change: the render it
+     * was watching no longer exists, and an accumulated deficit from the last
+     * one would ask the new one for damping it has not earned. */
+    s_passivity_energy_j = 0.0f;
+    s_passivity_excess_j = 0.0f;
+    s_passivity_damping_nm_s_per_rad = 0.0f;
     /* Start the slaved command where the shaft is, so the first tick after a
      * mode change is not a step. */
     s_speed_command_rad_s = s_status.omega_rad_s;
@@ -395,6 +463,12 @@ void firmware_set_position_reference_rad(float theta_rad) {
     s_status.position_ref_rad = (float)s_position_reference_counts * s_rad_per_count;
 }
 
+void firmware_set_passivity_control(bool enable) {
+    s_passivity_enabled = enable;
+    s_passivity_energy_j = 0.0f;
+    s_passivity_excess_j = 0.0f;
+}
+
 void firmware_set_impedance(float stiffness_nm_per_rad, float damping_nm_s_per_rad) {
     /* A negative spring would push the joint away from the handle, which is not
      * a thing a haptic interface should do by accident. NaN fails both
@@ -418,6 +492,28 @@ void firmware_tick(void) {
         hal_pwm_enable(false);
         hal_fault_latch(s_status.fault_bits);
         return;
+    }
+
+    /* Temperature at 200 Hz, which is a hundred times faster than the winding's
+     * 25 s time constant and 1/25 of the cost of reading it every tick. At the
+     * limit the gates open here rather than in the fault block above, because
+     * the fault bit is latched by this firmware and read back on the next tick;
+     * waiting for that tick would leave a bridge on for 50 us longer than the
+     * limit allows, which is harmless, and would also report a running drive for
+     * one tick after it stopped, which is not. */
+    s_thermal_divider += 1u;
+    if (s_thermal_divider >= FIRMWARE_THERMAL_DIVIDER) {
+        s_thermal_divider = 0u;
+        s_temperature_c = hal_temperature_read_c();
+        s_thermal_limit_a = firmware_thermal_limit(s_temperature_c);
+        s_status.temperature_c = s_temperature_c;
+        s_status.thermal_limit_a = s_thermal_limit_a;
+        if (!(s_temperature_c < FIRMWARE_OVERTEMP_LIMIT_C)) {
+            hal_fault_latch(HAL_FAULT_OVERTEMP);
+            s_status.fault_bits = hal_fault_read();
+            hal_pwm_enable(false);
+            return;
+        }
     }
 
     if (hal_current_read(&current) == HAL_OK && current.valid) {
@@ -530,13 +626,81 @@ void firmware_tick(void) {
          * estimate multiplied into it, which is a ten tick difference behind the
          * truth, so a stiff damper here lags. The observer that would fix that
          * does not exist yet. */
-        const float torque_nm = s_stiffness_nm_per_rad * s_position_error_rad -
-                                s_damping_nm_s_per_rad * s_status.omega_rad_s;
+        const float velocity_rad_s = s_status.omega_rad_s;
+        float torque_nm =
+            s_stiffness_nm_per_rad * s_position_error_rad - s_damping_nm_s_per_rad * velocity_rad_s;
+        {
+            /* Time domain passivity observer. It runs whenever the impedance
+             * mode does, because it is an observation and costs one multiply;
+             * only the controller that acts on it is optional. The energy that
+             * crosses the port
+             * is torque times speed integrated, and for a spring under a fixed
+             * reference it is exactly minus the stored energy: the render takes
+             * energy in as it is pushed and gives it back as it returns. Adding
+             * the stored energy back therefore leaves the energy the render has
+             * actually dissipated, which cannot be negative in a passive one.
+             *
+             * It goes negative when the reference moves without work being done
+             * against it, and that is the whole failure mode of a bilateral pair
+             * over a link: the far handle's angle arrives 2 ms late, the spring
+             * is stretched by a position it did not see, and the drive delivers
+             * energy it never stored. */
+            s_passivity_energy_j += torque_nm * velocity_rad_s * FIRMWARE_CONTROL_PERIOD_S;
+            const float stored_j =
+                0.5f * s_stiffness_nm_per_rad * s_position_error_rad * s_position_error_rad;
+            float excess_j = -(s_passivity_energy_j + stored_j);
+            float damping_nm_s_per_rad = 0.0f;
+            if (s_passivity_enabled && excess_j < 0.0f) {
+                const float speed_squared = velocity_rad_s * velocity_rad_s;
+                if (speed_squared > FIRMWARE_PASSIVITY_MIN_SPEED_SQUARED) {
+                    damping_nm_s_per_rad = -excess_j / (speed_squared * FIRMWARE_CONTROL_PERIOD_S);
+                    if (damping_nm_s_per_rad > FIRMWARE_PASSIVITY_MAX_DAMPING) {
+                        damping_nm_s_per_rad = FIRMWARE_PASSIVITY_MAX_DAMPING;
+                    }
+                    /* The damping the observer asks for is a torque, and the
+                     * drive can only produce stall. Asking for 290 N m from a
+                     * 2.85 N m motor and then subtracting the energy as if it had
+                     * been delivered is how a controller reports itself passive
+                     * while the joint carries on oscillating; this project
+                     * measured exactly that before the clamp existed. The
+                     * correction is limited to the torque the drive can make and
+                     * the observer is charged for what was actually applied, so a
+                     * render it cannot save stays negative and says so. */
+                    float correction_nm = -damping_nm_s_per_rad * velocity_rad_s;
+                    const float torque_limit_nm =
+                        FIRMWARE_STALL_CURRENT_A * s_torque_constant_nm_per_a;
+                    if (correction_nm > torque_limit_nm) {
+                        correction_nm = torque_limit_nm;
+                    }
+                    if (correction_nm < -torque_limit_nm) {
+                        correction_nm = -torque_limit_nm;
+                    }
+                    torque_nm += correction_nm;
+                    s_passivity_energy_j +=
+                        correction_nm * velocity_rad_s * FIRMWARE_CONTROL_PERIOD_S;
+                    damping_nm_s_per_rad = -correction_nm / velocity_rad_s;
+                    excess_j = -(s_passivity_energy_j + stored_j);
+                }
+            }
+            s_passivity_damping_nm_s_per_rad = damping_nm_s_per_rad;
+            s_passivity_excess_j = excess_j;
+            s_status.passivity_energy_j = s_passivity_energy_j;
+            s_status.passivity_excess_j = s_passivity_excess_j;
+            s_status.passivity_damping_nm_s_per_rad = s_passivity_damping_nm_s_per_rad;
+        }
         s_status.torque_ref_nm = torque_nm;
         s_iq_reference_a =
             firmware_clamp(torque_nm / s_torque_constant_nm_per_a, FIRMWARE_STALL_CURRENT_A);
     } else {
         s_iq_reference_a = s_current_reference_a;
+    }
+    /* The thermal envelope on top of whatever the mode asked for. At a bench
+     * temperature the limit is the stall current, so this comparison never
+     * fires and every published run is unchanged. It exists for the run where
+     * the winding is at 120 degC and the impedance mode is still asking for a
+     * peak. */
+    if (firmware_abs(s_iq_reference_a) > s_thermal_limit_a) {
+        s_iq_reference_a = (s_iq_reference_a > 0.0f) ? s_thermal_limit_a : -s_thermal_limit_a;
     }
     s_status.iq_ref_a = s_iq_reference_a;
 

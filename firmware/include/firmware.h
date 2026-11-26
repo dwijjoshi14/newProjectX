@@ -47,6 +47,18 @@ typedef struct {
     float torque_ref_nm;         /* impedance torque reference, N m */
     float stiffness_nm_per_rad;  /* rendered stiffness, N m/rad */
     float damping_nm_s_per_rad;  /* rendered damping, N m s/rad */
+    /* Day 5. The winding has a thermal limit and the drive has to act on it,
+     * so the temperature it reads is used twice: to pull the current envelope
+     * down before the limit, and to open the gates at it. */
+    float temperature_c;   /* winding temperature the HAL reported, degC */
+    float thermal_limit_a; /* current envelope after derating, A */
+    /* Time domain passivity, opt in. The observer accumulates the energy the
+     * rendered port has taken in; `passivity_excess_j` is what is left after
+     * the spring's stored energy is accounted for, so a negative value means
+     * the render is generating energy rather than returning it. */
+    float passivity_energy_j;             /* port energy accumulated, J */
+    float passivity_excess_j;             /* negative means active, J */
+    float passivity_damping_nm_s_per_rad; /* damping the controller added, N m s/rad */
 } firmware_status_t;
 
 /* Bring the drive up: HAL, sensor offsets, PWM off then armed. */
@@ -81,6 +93,15 @@ void firmware_set_position_reference_rad(float theta_rad);
  * Damping is only as good as the velocity estimate it is multiplied by, which
  * is a 2 kHz ten tick difference and not an observer. */
 void firmware_set_impedance(float stiffness_nm_per_rad, float damping_nm_s_per_rad);
+
+/* The passivity controller on the impedance render, Hannaford and Ryu, IEEE
+ * Transactions on Robotics and Automation 18(1), 2002. The observer itself
+ * always runs, because it is an observation and a drive that renders an
+ * impedance should be able to say how much energy it has returned. This call
+ * enables the controller, which changes the torque and is therefore off by
+ * default: the day 4 render was measured without it.
+ */
+void firmware_set_passivity_control(bool enable);
 
 /* One control tick, 20 kHz. Must finish inside 50 us. */
 void firmware_tick(void);

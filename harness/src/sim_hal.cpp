@@ -47,9 +47,9 @@ SimHalState s_state;
  * same binary sees the same noise. */
 uint32_t sim_rng_next(void) {
     uint32_t x = s_state.rng;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
+    x ^= x << 13u;
+    x ^= x >> 17u;
+    x ^= x << 5u;
     s_state.rng = x;
     return x;
 }
@@ -280,7 +280,14 @@ float hal_bus_voltage_read_v(void) {
 }
 
 float hal_temperature_read_c(void) {
-    return 25.0f; /* fixed ambient, thermal network arrives in rung 6 */
+    /* The winding, not the power stage: the winding is the thing with a limit
+     * and it is what a thermistor in the end turns reports. A plant with its
+     * thermal network off reports ambient, which is the same answer a board with
+     * no sensor wired would give. */
+    if (s_state.plant == nullptr) {
+        return 25.0f;
+    }
+    return static_cast<float>(s_state.plant->winding_temperature_c());
 }
 
 uint32_t hal_fault_read(void) {

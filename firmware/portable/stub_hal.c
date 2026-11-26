@@ -108,8 +108,13 @@ float hal_bus_voltage_read_v(void) {
     return STUB_BUS_VOLTAGE_NOMINAL_V;
 }
 
+/* Winding temperature this stub reports. A board reads a thermistor; a test
+ * that wants to exercise the over temperature path sets it here, because the
+ * alternative is a six second simulation for every case. */
+static float s_temperature_c = STUB_AMBIENT_C;
+
 float hal_temperature_read_c(void) {
-    return STUB_AMBIENT_C;
+    return s_temperature_c;
 }
 
 uint32_t hal_fault_read(void) {
@@ -186,6 +191,10 @@ void hal_panic(uint32_t code, uint32_t line) {
     (void)line;
     for (;;) {
     }
+}
+
+void hal_stub_set_temperature_c(float temperature_c) {
+    s_temperature_c = temperature_c;
 }
 
 float hal_stub_last_duty(uint32_t phase_index) {

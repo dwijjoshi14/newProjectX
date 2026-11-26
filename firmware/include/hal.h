@@ -30,13 +30,13 @@ extern "C" {
 typedef enum { HAL_OK = 0, HAL_ERR_ARGUMENT = 1, HAL_ERR_STATE = 2 } hal_status_t;
 
 /* Latched fault bits. The HAL reports, the firmware decides. */
-#define HAL_FAULT_OVERCURRENT (1u << 0)  /* phase current above limit, A */
-#define HAL_FAULT_OVERVOLTAGE (1u << 1)  /* DC link above limit, V */
-#define HAL_FAULT_UNDERVOLTAGE (1u << 2) /* DC link below limit, V */
-#define HAL_FAULT_OVERTEMP (1u << 3)     /* power stage above limit, degC */
-#define HAL_FAULT_ENCODER_LOSS (1u << 4) /* no valid encoder sample, bool */
-#define HAL_FAULT_WATCHDOG (1u << 5)     /* kick missed, bool */
-#define HAL_FAULT_GATE_DRIVER (1u << 6)  /* driver fault pin, bool */
+#define HAL_FAULT_OVERCURRENT (1u << 0u)  /* phase current above limit, A */
+#define HAL_FAULT_OVERVOLTAGE (1u << 1u)  /* DC link above limit, V */
+#define HAL_FAULT_UNDERVOLTAGE (1u << 2u) /* DC link below limit, V */
+#define HAL_FAULT_OVERTEMP (1u << 3u)     /* power stage above limit, degC */
+#define HAL_FAULT_ENCODER_LOSS (1u << 4u) /* no valid encoder sample, bool */
+#define HAL_FAULT_WATCHDOG (1u << 5u)     /* kick missed, bool */
+#define HAL_FAULT_GATE_DRIVER (1u << 6u)  /* driver fault pin, bool */
 
 /* Board constants. A board fills this with its own values, so firmware source
  * does not change when the hardware changes. */
