@@ -4,6 +4,18 @@
 #include "sim_hal.h"
 #include "tsim/plant.h"
 
+void sim_run_remote_window(tsim::IPlant &plant) {
+    tsim::InverterCommand command{};
+    command.duty_a = 0.5f;
+    command.duty_b = 0.5f;
+    command.duty_c = 0.5f;
+    command.bridge_enabled = false;
+    plant.latch_inverter(command);
+    for (std::uint32_t i = 0u; i < tsim::kStepsPerControl; ++i) {
+        plant.step_one();
+    }
+}
+
 void sim_run_window(tsim::IPlant &plant, std::uint64_t tick) {
     tsim::InverterCommand command{};
     sim_hal_take_inverter_command(&command);

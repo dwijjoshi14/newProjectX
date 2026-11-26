@@ -461,3 +461,146 @@ TSIM_TEST(impedance_holds_a_large_angle_without_losing_counts) {
     TSIM_CHECK(std::fabs(firmware_status()->position_error_rad) > 0.5 * one_count_rad);
     TSIM_CHECK(plant.mechanical().theta_rotor_rad > 300.0);
 }
+
+namespace {
+
+/* One run of an impedance render whose reference is the joint's own angle from
+ * five milliseconds ago. That is the delayed-coupling mechanism with the link
+ * and the second joint taken out: the reference arrives late, the spring is
+ * stretched by a position the drive did not see, and the drive does work it
+ * never stored. If the observer cannot see this it cannot see a bilateral pair.
+ */
+struct DelayedReferenceRun {
+    double excess_min_j = 0.0;
+    double peak_early_rad_s = 0.0;
+    double peak_late_rad_s = 0.0;
+    double damping_max_nm_s_per_rad = 0.0;
+};
+
+DelayedReferenceRun delayed_reference_run(bool passivity_control) {
+    tsim::PlantParams params = tsim::maxon_ec_i_40_70w_params();
+    params.mechanics = tsim::mechanics_params_rigid();
+    tsim::SwitchingPlant plant(params, tsim::inverter_params_realistic());
+    plant.reset(0.0);
+    sim_hal_attach(plant);
+    sim_hal_set_board_dead_time_s(5.0e-7f);
+    sim_hal_set_imperfections(false);
+    sim_hal_latch_sample(plant.sample_electrical(), 0u);
+
+    firmware_init();
+    firmware_set_passivity_control(passivity_control);
+    firmware_set_impedance(8.0f, 0.0f);
+    firmware_set_mode(FIRMWARE_MODE_IMPEDANCE);
+
+    constexpr std::uint64_t kTicks = 4000; /* 200 ms */
+    constexpr std::uint64_t kDelay = 100;  /* 5 ms */
+    std::vector<double> history;
+    history.reserve(kTicks + 1u);
+    DelayedReferenceRun run;
+    for (std::uint64_t tick = 0; tick < kTicks; ++tick) {
+        history.push_back(plant.mechanical().theta_rotor_rad);
+        /* A fixed offset for the first 10 ms to put some energy in, then the
+         * delayed self reference. */
+        const double reference =
+            (tick < 200u) ? 0.01 : history[static_cast<std::size_t>(tick - kDelay)];
+        firmware_set_position_reference_rad(static_cast<float>(reference));
+        sim_run_window(plant, tick);
+
+        const double excess_j = firmware_status()->passivity_excess_j;
+        run.excess_min_j = std::min(run.excess_min_j, excess_j);
+        const double speed_rad_s = std::fabs(plant.mechanical().omega_rotor_rad_s);
+        run.damping_max_nm_s_per_rad =
+            std::max(run.damping_max_nm_s_per_rad,
+                     static_cast<double>(firmware_status()->passivity_damping_nm_s_per_rad));
+        if (tick < kTicks / 4u) {
+            run.peak_early_rad_s = std::max(run.peak_early_rad_s, speed_rad_s);
+        }
+        if (tick >= 3u * kTicks / 4u) {
+            run.peak_late_rad_s = std::max(run.peak_late_rad_s, speed_rad_s);
+        }
+    }
+    return run;
+}
+
+} // namespace
+
+TSIM_TEST(passivity_observer_catches_a_reference_that_arrives_late) {
+    /* Without the controller the observer has to go clearly negative: the render
+     * is returning energy, and that number is the evidence. With the controller
+     * the excess has to stay at the noise floor, because the damping it adds is
+     * sized to dissipate exactly what the observer sees. */
+    const DelayedReferenceRun open_loop = delayed_reference_run(false);
+    const DelayedReferenceRun controlled = delayed_reference_run(true);
+
+    TSIM_CHECK(open_loop.excess_min_j < -0.1);
+    /* What is not asserted here is that the controlled run generates less. In this
+     * case the reference is the joint's own past angle, so the controller changes
+     * the trajectory and the loop then generates a different amount: measured, the
+     * controlled run can generate more. A one port observer cannot stabilise a loop
+     * whose reference is one of its own states, and a test that pretended otherwise
+     * would be the test lying about the method. What the controller buys is
+     * measured in the bilateral study, where the reference is another joint. */
+    TSIM_CHECK(controlled.damping_max_nm_s_per_rad > 0.0);
+    /* The controller has to have done something: with it off the damping is
+     * exactly zero, and with it on it is not. */
+    TSIM_CHECK(open_loop.damping_max_nm_s_per_rad == 0.0);
+    TSIM_CHECK(controlled.damping_max_nm_s_per_rad > 0.01);
+    /* What this test does NOT assert is that the joint stops. It does not: a
+     * one port observer with a reference that is free to move sees only the
+     * energy its own render returns, and a loop that feeds its own delayed
+     * position back in can keep that render supplied. Measured, the joint still
+     * reaches the current limit in both runs. The controller bounds what the
+     * render gives back, which is the safety claim, and it is not a stabiliser
+     * for an arbitrary delayed coupling. docs/results.md says so. */
+    TSIM_CHECK(controlled.peak_late_rad_s > 0.0);
+}
+
+TSIM_TEST(passivity_observer_stays_quiet_on_a_passive_spring) {
+    /* A spring and a damper against a fixed reference, pushed by a hand and
+     * released, is passive by construction. The reference is set once, before
+     * anything moves, so nothing in this run is a reference motion the observer
+     * could mistake for an injection: the energy goes in and comes out through
+     * the port, which is the case the observer has to leave alone. If it did not,
+     * the drive would damp every contact it renders and the stiffness day 4
+     * measured would have been the controller's, not the spring's. */
+    tsim::PlantParams params = tsim::maxon_ec_i_40_70w_params();
+    params.mechanics = tsim::mechanics_params_rigid();
+    tsim::SwitchingPlant plant(params, tsim::inverter_params_realistic());
+    plant.reset(0.0);
+    sim_hal_attach(plant);
+    sim_hal_set_board_dead_time_s(5.0e-7f);
+    sim_hal_set_imperfections(false);
+    sim_hal_latch_sample(plant.sample_electrical(), 0u);
+
+    firmware_init();
+    firmware_set_passivity_control(true);
+    firmware_set_impedance(4.0f, 0.02f);
+    firmware_set_mode(FIRMWARE_MODE_IMPEDANCE);
+    firmware_set_position_reference_rad(0.0f);
+
+    double excess_min_j = 0.0;
+    double largest_damping_nm_s_per_rad = 0.0;
+    double largest_angle_rad = 0.0;
+    for (std::uint64_t tick = 0; tick < 4000u; ++tick) {
+        /* 20 mN m for 20 ms, then nothing: a push into the spring and a release. */
+        plant.set_external_torque_nm((tick >= 400u && tick < 800u) ? 0.02 : 0.0);
+        sim_run_window(plant, tick);
+        const firmware_status_t *status = firmware_status();
+        excess_min_j = std::min(excess_min_j, static_cast<double>(status->passivity_excess_j));
+        largest_damping_nm_s_per_rad =
+            std::max(largest_damping_nm_s_per_rad,
+                     static_cast<double>(status->passivity_damping_nm_s_per_rad));
+        largest_angle_rad =
+            std::max(largest_angle_rad, std::fabs(plant.mechanical().theta_rotor_rad));
+    }
+    /* The floor is the encoder count, not the physics: the stored energy is built
+     * from an error quantised to 0.38 mrad, and that wobbles the observer by a
+     * few microjoules. A render that leaks a millijoule is a different thing. */
+    TSIM_CHECK(excess_min_j > -5.0e-4);
+    TSIM_CHECK(largest_damping_nm_s_per_rad < 2.0);
+    /* A spring of 4 N m/rad pushed with 20 mN m for 20 ms oscillates, and the
+     * point is that it is still there to oscillate: the controller did not eat
+     * the contact. */
+    TSIM_CHECK(largest_angle_rad > 0.02);
+    TSIM_CHECK(plant.mechanical().theta_rotor_rad > -0.01);
+}

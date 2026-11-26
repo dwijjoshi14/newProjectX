@@ -19,4 +19,12 @@ class IPlant;
  * and no clock is read. */
 void sim_run_window(tsim::IPlant &plant, std::uint64_t tick);
 
+/* Run one 50 us window on a joint with no drive: the bridge is held open by
+ * default, so no current flows and the only torque is whatever the caller put
+ * in with set_external_torque_nm. This is the far side of a bilateral pair, and
+ * it exists because hal.h is a single MCU contract: two drives are two
+ * processes, and this one process can only host one. What the far side keeps is
+ * the mechanics, which is what the link is coupled to. */
+void sim_run_remote_window(tsim::IPlant &plant);
+
 #endif /* TSIM_HARNESS_SIM_LOOP_H */

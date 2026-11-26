@@ -1,4 +1,5 @@
-add_executable(tsim_tests test_main.cpp test_plant.cpp test_inverter.cpp test_mechanics.cpp)
+add_executable(tsim_tests test_main.cpp test_plant.cpp test_inverter.cpp test_mechanics.cpp
+                             test_thermal.cpp)
 target_link_libraries(tsim_tests PRIVATE tsim_sim tsim_warnings)
 add_test(NAME unit COMMAND tsim_tests)
 
@@ -6,7 +7,7 @@ add_executable(tsim_firmware_tests test_main.cpp test_firmware.cpp test_foc.cpp)
 target_link_libraries(tsim_firmware_tests PRIVATE tsim_firmware tsim_hal_stub tsim_warnings)
 add_test(NAME firmware COMMAND tsim_firmware_tests)
 
-add_executable(tsim_control_tests test_main.cpp test_control.cpp test_sensing.cpp)
+add_executable(tsim_control_tests test_main.cpp test_control.cpp test_sensing.cpp test_link.cpp)
 target_link_libraries(tsim_control_tests PRIVATE tsim_sim_hal tsim_sim tsim_firmware tsim_warnings)
 add_test(NAME control COMMAND tsim_control_tests)
 

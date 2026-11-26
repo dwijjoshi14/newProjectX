@@ -36,7 +36,15 @@
 
 namespace {
 
-enum class Scenario { kSpeedStep, kCurrentStep, kDeadTime, kSweptSine, kWallContact, kBacklash };
+enum class Scenario {
+    kSpeedStep,
+    kCurrentStep,
+    kDeadTime,
+    kSweptSine,
+    kWallContact,
+    kBacklash,
+    kThermalSoak
+};
 
 /* Average voltage source, or the inverter that switches. */
 enum class PlantModel { kIdeal, kSwitching };
@@ -83,6 +91,7 @@ struct ScenarioConfig {
     double encoder_noise_deg = 0.05;
     double sweep_stop_hz = 150.0;
     int sweep_points = 13;
+    bool thermal = false; /* winding and housing network, off by default */
     const char *out_path = "";
 };
 
@@ -194,6 +203,23 @@ ScenarioConfig backlash_config() {
     config.log_every = 1;
     config.backlash_rad = 0.0;
     config.out_path = "data/run_latest/day4_backlash.csv";
+    return config;
+}
+
+/* A 20 A stall on a clamped rotor, held until something objects. This is the
+ * test nobody ran on day 3: the sampling probe pulled 20 A, seven times the
+ * continuous rating, and the note in results.md said there was no thermal model
+ * to object. There is one now, and it takes about seven seconds to reach the
+ * point where the drive opens its own gates. */
+ScenarioConfig thermal_soak_config() {
+    ScenarioConfig config;
+    config.scenario = Scenario::kThermalSoak;
+    config.ticks = 480000; /* 24 s, long enough for the envelope to settle */
+    config.log_every = 20; /* every millisecond */
+    config.current_reference_a = 20.0f;
+    config.locked_rotor = true;
+    config.thermal = true;
+    config.out_path = "data/run_latest/day5_thermal_soak.csv";
     return config;
 }
 
@@ -329,6 +355,8 @@ const char *scenario_name(Scenario scenario) {
         return "wall_contact";
     case Scenario::kBacklash:
         return "backlash";
+    case Scenario::kThermalSoak:
+        return "thermal_soak";
     }
     return "unknown";
 }
@@ -374,12 +402,13 @@ bool read_on_off(const char *text, bool *out_value) {
 void print_usage(const char *program) {
     std::fprintf(stderr,
                  "usage: %s [--scenario "
-                 "speed_step|current_step|dead_time|swept_sine|wall_contact|backlash]\n"
+                 "speed_step|current_step|dead_time|swept_sine|wall_contact|backlash|"
+                 "thermal_soak]\n"
                  "          [--plant ideal|switching] [--load rigid|compliant|hand|wall]\n"
                  "          [--mode speed|position|impedance]\n"
                  "          [--dead-time-ns N] [--compensation on|off] [--imperfections on|off]\n"
                  "          [--backlash-deg X] [--wall-angle-rad X] [--stiffness X] [--damping X]\n"
-                 "          [--coupling-stiffness X] [--encoder-noise-deg X]\n"
+                 "          [--coupling-stiffness X] [--encoder-noise-deg X] [--thermal on|off]\n"
                  "          [--position-ref-rad X] [--sweep-amplitude-rad X] [--ticks N]\n"
                  "          [--log-every N] [--out PATH]\n",
                  program);
@@ -403,6 +432,8 @@ ScenarioConfig parse_options(int argc, char **argv) {
                 config = wall_contact_config();
             } else if (std::strcmp(name, "backlash") == 0) {
                 config = backlash_config();
+            } else if (std::strcmp(name, "thermal_soak") == 0) {
+                config = thermal_soak_config();
             } else {
                 std::fprintf(stderr, "unknown scenario: %s\n", name);
                 std::exit(2);
@@ -468,6 +499,11 @@ ScenarioConfig parse_options(int argc, char **argv) {
             config.position_reference_rad = static_cast<float>(std::strtod(argv[++i], nullptr));
         } else if (std::strcmp(argv[i], "--sweep-amplitude-rad") == 0 && i + 1 < argc) {
             config.sweep_amplitude_rad = std::strtod(argv[++i], nullptr);
+        } else if (std::strcmp(argv[i], "--thermal") == 0 && i + 1 < argc) {
+            if (!read_on_off(argv[++i], &config.thermal)) {
+                std::fprintf(stderr, "thermal wants on or off\n");
+                std::exit(2);
+            }
         } else if (std::strcmp(argv[i], "--encoder-noise-deg") == 0 && i + 1 < argc) {
             config.encoder_noise_deg = std::strtod(argv[++i], nullptr);
         } else if (std::strcmp(argv[i], "--coupling-stiffness") == 0 && i + 1 < argc) {
@@ -532,6 +568,10 @@ int main(int argc, char **argv) {
     tsim::PlantParams params = tsim::maxon_ec_i_40_70w_params();
     params.mechanics = mechanics_for(config);
     params.mechanics.backlash_rad = config.backlash_rad;
+    if (config.thermal) {
+        params.thermal = tsim::thermal_params_maxon();
+        params.thermal.enabled = true;
+    }
 
     std::unique_ptr<tsim::IPlant> plant;
     if (config.plant == PlantModel::kIdeal) {
@@ -570,7 +610,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     firmware_set_dead_time_compensation(config.dead_time_compensation);
-    if (config.scenario == Scenario::kCurrentStep) {
+    if (config.scenario == Scenario::kCurrentStep || config.scenario == Scenario::kThermalSoak) {
         firmware_set_mode(FIRMWARE_MODE_CURRENT);
         firmware_set_current_reference_a(current_reference_at(config, 0));
     } else if (config.mode == ControlMode::kPosition) {
@@ -605,7 +645,7 @@ int main(int argc, char **argv) {
     std::fprintf(csv, "tick,time_ms,omega_ref_rad_s,omega_rad_s,iq_ref_a,iq_a,id_a,ia_a,ia_plant_a,"
                       "vd_v,vq_v,duty_a,torque_nm,load_nm,bus_v,theta_rad,theta_ref_rad,"
                       "theta_load_rad,omega_load_rad_s,torque_coupling_nm,torque_wall_nm,sweep_hz,"
-                      "position_error_rad,sweep_measure\n");
+                      "position_error_rad,sweep_measure,winding_c,thermal_limit_a\n");
 
     double peak_duty = 0.0;
     double peak_current_a = 0.0;
@@ -657,7 +697,7 @@ int main(int argc, char **argv) {
         if (tick % config.log_every == 0) {
             std::fprintf(csv,
                          "%llu,%.4f,%.6g,%.9g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6f,%.6g,%.6g,"
-                         "%.6g,%.9g,%.9g,%.9g,%.9g,%.6g,%.6g,%.6g,%.9g,%d\n",
+                         "%.6g,%.9g,%.9g,%.9g,%.9g,%.6g,%.6g,%.6g,%.9g,%d,%.4f,%.4f\n",
                          static_cast<unsigned long long>(tick),
                          static_cast<double>(tick + 1u) * tsim::kControlPeriodS * 1.0e3,
                          omega_reference_rad_s, speed, status->iq_ref_a, status->iq_a, status->id_a,
@@ -666,7 +706,7 @@ int main(int argc, char **argv) {
                          reference.position_rad, mechanical.theta_load_rad,
                          mechanical.omega_load_rad_s, mechanical.torque_coupling_nm,
                          mechanical.torque_wall_nm, reference.sweep_hz, status->position_error_rad,
-                         reference.measuring);
+                         reference.measuring, status->temperature_c, status->thermal_limit_a);
         }
     }
 
@@ -715,6 +755,8 @@ int main(int argc, char **argv) {
                 energy.electrical_j, energy.copper_j, energy.switching_j, energy.mechanical_j);
     std::printf("  mechanical loss  viscous %.4f J, coulomb %.4f J, stored %.4f J\n",
                 energy.viscous_j, energy.coulomb_j, energy.elastic_j);
+    std::printf("  winding          %.3f degC, current envelope %.3f A\n", status->temperature_c,
+                status->thermal_limit_a);
     std::printf("  firmware ticks   %u\n", status->ticks);
     std::printf("  faults           0x%08x\n", status->fault_bits);
     std::printf("  telemetry drops  %u\n", sim_hal_telemetry_drops());
