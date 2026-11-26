@@ -35,6 +35,7 @@ class SwitchingPlant final : public IPlant {
     void step_one() override;
     std::uint64_t step_count() const override;
     double time_s() const override;
+    double winding_temperature_c() const override;
     ElectricalReadout sample_electrical() const override;
     MechanicalState mechanical() const override;
     Telemetry telemetry() const override;
@@ -51,6 +52,7 @@ class SwitchingPlant final : public IPlant {
     PlantParams params_;
     InverterParams inverter_;
     MechanicalSystem mechanics_;
+    ThermalNetwork thermal_;
     bool locked_ = false;
     double step_s_ = kPlantStepS;
     InverterCommand command_{};
@@ -73,6 +75,9 @@ class SwitchingPlant final : public IPlant {
     double p_mechanical_w_ = 0.0;
     std::uint64_t steps_ = 0;
     EnergyAccount energy_{};
+
+    /* Winding resistance at the temperature the network is at right now. */
+    double copper_resistance_ohm() const;
 
     /* Leg states and voltage for this step, filled by step_inverter(). */
     void step_inverter();

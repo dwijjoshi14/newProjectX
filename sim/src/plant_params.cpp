@@ -13,6 +13,10 @@ PlantParams maxon_ec_i_40_70w_params() {
     params.inertia_kg_m2 = 2.3e-6;                 /* 23 gcm2, datasheet rotor inertia */
     params.viscous_friction_nm_s_per_rad = 1.0e-5; /* ASSUMED, see parameters.md */
     params.bus_voltage_v = 36.0;                   /* datasheet nominal voltage */
+    /* Disabled, but filled in, so a plant that never asked for heat reports the
+     * bench temperature rather than zero. A board with no thermistor reads
+     * ambient, and that is the constant this one has to agree with. */
+    params.thermal = thermal_params_maxon();
     return params;
 }
 
@@ -92,6 +96,29 @@ InverterParams inverter_params_realistic() {
     inverter.bus_source_resistance_ohm = 0.1; /* ASSUMED, supply and cabling */
     inverter.dead_time_linear_a = 0.5;        /* ASSUMED, half the assumed ripple */
     return inverter;
+}
+
+/* Datasheet thermal values, with the two heat capacities derived from the two
+ * published time constants: 24.9 s / 2.27 K/W = 11.0 J/K and
+ * 1020 s / 8.17 K/W = 125 J/K. That derivation is why the time constants are
+ * not free parameters: they are the same two numbers rearranged, and a test
+ * checks the rearrangement.
+ *
+ * Off by default. A run that wants heat asks for it, which is what keeps every
+ * day 1 to day 4 number exactly where it was. */
+ThermalParams thermal_params_maxon() {
+    ThermalParams params{};
+    params.enabled = false;
+    params.ambient_c = 25.0;                      /* ASSUMED, bench */
+    params.winding_to_housing_k_per_w = 2.27;     /* datasheet */
+    params.housing_to_ambient_k_per_w = 8.17;     /* datasheet */
+    params.winding_heat_capacity_j_per_k = 11.0;  /* 24.9 s / 2.27 K/W */
+    params.housing_heat_capacity_j_per_k = 125.0; /* 1020 s / 8.17 K/W */
+    params.copper_alpha_per_k = 0.00393;          /* copper at 20 degC, IEC 60228 */
+    params.copper_reference_c = 20.0;             /* the temperature alpha is quoted at */
+    params.initial_winding_c = params.ambient_c;
+    params.initial_housing_c = params.ambient_c;
+    return params;
 }
 
 } // namespace tsim

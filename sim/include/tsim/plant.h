@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "tsim/mechanics.h"
+#include "tsim/thermal.h"
 
 namespace tsim {
 
@@ -31,6 +32,9 @@ struct PlantParams {
      * Coulomb friction. All zero is one rigid body with viscous drag, which is
      * exactly the model day 1 to day 3 used. */
     MechanicalParams mechanics;
+    /* The winding and the housing. Disabled by default, which means the
+     * resistance stays at the value above and day 1 to day 4 are unchanged. */
+    ThermalParams thermal;
 };
 
 struct InverterCommand {
@@ -115,6 +119,11 @@ class IPlant {
     virtual std::uint64_t step_count() const = 0;
 
     virtual double time_s() const = 0;
+
+    /* Winding temperature, degC. Ambient when the thermal network is off, which
+     * is what a board with no thermistor would report and what makes the drive's
+     * over temperature logic a no op at 25 degC. */
+    virtual double winding_temperature_c() const = 0;
 
     virtual ElectricalReadout sample_electrical() const = 0;
 

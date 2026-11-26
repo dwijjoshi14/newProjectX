@@ -38,6 +38,12 @@ InverterParams inverter_params_ideal();
  * been selected. */
 InverterParams inverter_params_realistic();
 
+/* The winding and the housing as two lumps: 2.27 K/W and 11.0 J/K inside,
+ * 8.17 K/W and 125 J/K to the bench, copper at 0.00393 per K from 20 degC.
+ * Disabled by default, so asking for it is a deliberate act and day 1 to day 4
+ * do not warm up by 0.05 K in their last digit. */
+ThermalParams thermal_params_maxon();
+
 } // namespace tsim
 
 #endif /* TSIM_SIM_PLANT_PARAMS_H */

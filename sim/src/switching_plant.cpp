@@ -42,12 +42,18 @@ SwitchingPlant::SwitchingPlant(const PlantParams &params, const InverterParams &
     : params_(params), inverter_(inverter) {
     mechanics_.configure(params_.mechanics, params_.inertia_kg_m2,
                          params_.viscous_friction_nm_s_per_rad);
+    thermal_.configure(params_.thermal);
 }
 
 void SwitchingPlant::configure(const PlantParams &params) {
     params_ = params;
     mechanics_.configure(params_.mechanics, params_.inertia_kg_m2,
                          params_.viscous_friction_nm_s_per_rad);
+    thermal_.configure(params_.thermal);
+}
+
+double SwitchingPlant::copper_resistance_ohm() const {
+    return params_.resistance_phase_ohm * thermal_.copper_resistance_multiplier();
 }
 
 void SwitchingPlant::reset(double theta_rotor_rad) {
@@ -71,6 +77,7 @@ void SwitchingPlant::reset(double theta_rotor_rad) {
     steps_ = 0;
     energy_ = EnergyAccount{};
     mechanics_.reset(theta_rotor_rad);
+    thermal_.reset();
 }
 
 void SwitchingPlant::latch_inverter(const InverterCommand &command) {
@@ -225,12 +232,13 @@ void SwitchingPlant::step_one() {
         const double e_b = -emf_peak_v * std::sin(theta_e_rad - kTwoPiOverThree);
         const double e_c = -emf_peak_v * std::sin(theta_e_rad + kTwoPiOverThree);
 
-        const double di_a = (phase_voltage_a_v_ - params_.resistance_phase_ohm * ia_a_ - e_a) /
-                            params_.inductance_phase_h;
-        const double di_b = (phase_voltage_b_v_ - params_.resistance_phase_ohm * ib_a_ - e_b) /
-                            params_.inductance_phase_h;
-        const double di_c = (phase_voltage_c_v_ - params_.resistance_phase_ohm * ic_a_ - e_c) /
-                            params_.inductance_phase_h;
+        const double resistance_ohm = copper_resistance_ohm();
+        const double di_a =
+            (phase_voltage_a_v_ - resistance_ohm * ia_a_ - e_a) / params_.inductance_phase_h;
+        const double di_b =
+            (phase_voltage_b_v_ - resistance_ohm * ib_a_ - e_b) / params_.inductance_phase_h;
+        const double di_c =
+            (phase_voltage_c_v_ - resistance_ohm * ic_a_ - e_c) / params_.inductance_phase_h;
 
         ia_a_ += di_a * step_s_;
         ib_a_ += di_b * step_s_;
@@ -245,8 +253,7 @@ void SwitchingPlant::step_one() {
          * time and the device resistance drop. Copper loss is the winding's
          * share; the difference is the inverter's conduction loss. */
         p_electrical_w_ = bus_terminal_v_ * bus_current_a_;
-        p_copper_w_ =
-            params_.resistance_phase_ohm * (ia_a_ * ia_a_ + ib_a_ * ib_a_ + ic_a_ * ic_a_);
+        p_copper_w_ = resistance_ohm * (ia_a_ * ia_a_ + ib_a_ * ib_a_ + ic_a_ * ic_a_);
         energy_.electrical_j += p_electrical_w_ * step_s_;
         energy_.copper_j += p_copper_w_ * step_s_;
         energy_.switching_j += switching_power_w_ * step_s_;
@@ -254,6 +261,8 @@ void SwitchingPlant::step_one() {
 
     p_mechanical_w_ = torque_motor_nm_ * omega_rotor_rad_s_;
     energy_.mechanical_j += p_mechanical_w_ * step_s_;
+
+    thermal_.step(step_s_, p_copper_w_);
 
     if (locked_) {
         omega_rotor_rad_s_ = 0.0;
@@ -280,6 +289,10 @@ std::uint64_t SwitchingPlant::step_count() const {
 
 double SwitchingPlant::time_s() const {
     return static_cast<double>(steps_) * step_s_;
+}
+
+double SwitchingPlant::winding_temperature_c() const {
+    return thermal_.winding_temperature_c();
 }
 
 ElectricalReadout SwitchingPlant::sample_electrical() const {
