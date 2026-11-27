@@ -70,3 +70,50 @@ TSIM_TEST(firmware_registers_a_tick_but_does_not_start_its_own_clock) {
     TSIM_CHECK(tick_fn != nullptr);
     TSIM_CHECK(!hal_stub_timing_running());
 }
+
+/* Day 6. A two port observer is arithmetic on two energies and nothing else, so
+ * these cases set the far end's number directly instead of driving a second
+ * joint to produce it. What they check is the sign and the reset, which are the
+ * two ways a shared energy account goes wrong: it damps a render that is passing
+ * energy home, or it carries a deficit across a mode change. */
+TSIM_TEST(firmware_link_energy_lets_the_pair_see_generation_it_cannot) {
+    hal_stub_set_temperature_c(25.0f);
+    firmware_init();
+    /* Zero stiffness, so the stored term is zero and the excess is exactly the
+     * negated energy. That makes the arithmetic visible instead of folded into a
+     * spring. */
+    firmware_set_impedance(0.0f, 0.0f);
+    firmware_set_mode(FIRMWARE_MODE_IMPEDANCE);
+    for (int i = 0; i < 200; ++i) {
+        firmware_tick();
+    }
+    TSIM_CHECK_NEAR(firmware_status()->passivity_excess_j, 0.0, 1.0e-6);
+
+    /* The far end reports a joule delivered. This drive's own port is still
+     * quiet, and the pair is not. */
+    firmware_set_link_energy_j(1.0f);
+    firmware_tick();
+    TSIM_CHECK(firmware_status()->passivity_excess_j < -0.9f);
+    TSIM_CHECK_NEAR(firmware_status()->passivity_peer_energy_j, 1.0, 1.0e-6);
+    firmware_set_link_energy_j(0.0f);
+}
+
+TSIM_TEST(firmware_link_energy_is_cleared_by_a_mode_change) {
+    hal_stub_set_temperature_c(25.0f);
+    firmware_init();
+    firmware_set_impedance(0.0f, 0.0f);
+    firmware_set_mode(FIRMWARE_MODE_IMPEDANCE);
+    firmware_set_link_energy_j(2.0f);
+    for (int i = 0; i < 200; ++i) {
+        firmware_tick();
+    }
+    TSIM_CHECK(firmware_status()->passivity_excess_j < -1.9f);
+
+    /* The render the deficit belonged to does not exist any more. A drive that
+     * kept the number would damp the next render for a debt another controller
+     * ran up. */
+    firmware_set_mode(FIRMWARE_MODE_IMPEDANCE);
+    firmware_tick();
+    TSIM_CHECK_NEAR(firmware_status()->passivity_peer_energy_j, 0.0, 1.0e-6);
+    TSIM_CHECK_NEAR(firmware_status()->passivity_excess_j, 0.0, 1.0e-6);
+}

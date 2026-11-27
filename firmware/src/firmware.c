@@ -145,6 +145,9 @@ static bool s_passivity_enabled;
 static float s_passivity_energy_j;
 static float s_passivity_excess_j;
 static float s_passivity_damping_nm_s_per_rad;
+/* The far end's accumulated port energy, J, as the network last reported it.
+ * Zero is a one port render, which is what every run before day 6 was. */
+static float s_link_energy_j;
 static pi_regulator_t s_pi_d;
 static pi_regulator_t s_pi_q;
 static pi_regulator_t s_pi_speed;
@@ -272,6 +275,7 @@ void firmware_init(void) {
     s_status.passivity_energy_j = 0.0f;
     s_status.passivity_excess_j = 0.0f;
     s_status.passivity_damping_nm_s_per_rad = 0.0f;
+    s_status.passivity_peer_energy_j = 0.0f;
     s_temperature_c = 0.0f;
     s_thermal_limit_a = FIRMWARE_STALL_CURRENT_A;
     s_thermal_divider = 0u;
@@ -279,6 +283,7 @@ void firmware_init(void) {
     s_passivity_energy_j = 0.0f;
     s_passivity_excess_j = 0.0f;
     s_passivity_damping_nm_s_per_rad = 0.0f;
+    s_link_energy_j = 0.0f;
     s_offset_ia_a = 0.0f;
     s_offset_ib_a = 0.0f;
     s_offset_ic_a = 0.0f;
@@ -422,6 +427,12 @@ void firmware_set_mode(firmware_mode_t mode) {
     s_passivity_energy_j = 0.0f;
     s_passivity_excess_j = 0.0f;
     s_passivity_damping_nm_s_per_rad = 0.0f;
+    /* The far end's number belongs to the render that is gone as well. A drive
+     * that kept it would damp its next render for a debt another controller ran
+     * up, and a two port pair that changed mode would spend a second shaking off
+     * a coefficient that no longer describes anything. */
+    s_link_energy_j = 0.0f;
+    s_status.passivity_peer_energy_j = 0.0f;
     /* Start the slaved command where the shaft is, so the first tick after a
      * mode change is not a step. */
     s_speed_command_rad_s = s_status.omega_rad_s;
@@ -467,6 +478,11 @@ void firmware_set_passivity_control(bool enable) {
     s_passivity_enabled = enable;
     s_passivity_energy_j = 0.0f;
     s_passivity_excess_j = 0.0f;
+}
+
+void firmware_set_link_energy_j(float energy_j) {
+    s_link_energy_j = energy_j;
+    s_status.passivity_peer_energy_j = energy_j;
 }
 
 void firmware_set_impedance(float stiffness_nm_per_rad, float damping_nm_s_per_rad) {
@@ -648,7 +664,13 @@ void firmware_tick(void) {
             s_passivity_energy_j += torque_nm * velocity_rad_s * FIRMWARE_CONTROL_PERIOD_S;
             const float stored_j =
                 0.5f * s_stiffness_nm_per_rad * s_position_error_rad * s_position_error_rad;
-            float excess_j = -(s_passivity_energy_j + stored_j);
+            /* Two ports. This drive can only measure the energy that crosses
+             * its own port, and the failure being watched for is a pair that
+             * generates: the master pushes energy out, the far render is late,
+             * and the far port is where it comes back. Adding the far end's
+             * number, as the link delivered it, is the whole of the difference.
+             * With no link the term is zero and this is the day 5 observer. */
+            float excess_j = -(s_passivity_energy_j + s_link_energy_j + stored_j);
             float damping_nm_s_per_rad = 0.0f;
             if (s_passivity_enabled && excess_j < 0.0f) {
                 const float speed_squared = velocity_rad_s * velocity_rad_s;
@@ -679,7 +701,7 @@ void firmware_tick(void) {
                     s_passivity_energy_j +=
                         correction_nm * velocity_rad_s * FIRMWARE_CONTROL_PERIOD_S;
                     damping_nm_s_per_rad = -correction_nm / velocity_rad_s;
-                    excess_j = -(s_passivity_energy_j + stored_j);
+                    excess_j = -(s_passivity_energy_j + s_link_energy_j + stored_j);
                 }
             }
             s_passivity_damping_nm_s_per_rad = damping_nm_s_per_rad;

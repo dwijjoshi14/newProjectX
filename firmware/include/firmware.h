@@ -59,6 +59,9 @@ typedef struct {
     float passivity_energy_j;             /* port energy accumulated, J */
     float passivity_excess_j;             /* negative means active, J */
     float passivity_damping_nm_s_per_rad; /* damping the controller added, N m s/rad */
+    /* Day 6. The other end's port energy, as it arrived over the link and as the
+     * observer used it. Zero when this drive is a one port render. */
+    float passivity_peer_energy_j; /* peer port energy in use, J */
 } firmware_status_t;
 
 /* Bring the drive up: HAL, sensor offsets, PWM off then armed. */
@@ -102,6 +105,19 @@ void firmware_set_impedance(float stiffness_nm_per_rad, float damping_nm_s_per_r
  * default: the day 4 render was measured without it.
  */
 void firmware_set_passivity_control(bool enable);
+
+/* The other end's accumulated port energy, J, as it arrives over the link. A
+ * port that is delivering work has a positive energy in this sign convention,
+ * the same one `passivity_energy_j` uses, so a pair that is generating has two
+ * positive numbers and a pair that is passing energy back and forth has one of
+ * each. The observer adds this to its own before it decides, which is the whole
+ * of the difference between a one port observer and a two port one: a drive
+ * cannot see the far side's energy by measuring its own port, so the only way
+ * it ever learns it is from the network.
+ *
+ * Zero is the one port behaviour and the default, so every day 5 number stands.
+ */
+void firmware_set_link_energy_j(float energy_j);
 
 /* One control tick, 20 kHz. Must finish inside 50 us. */
 void firmware_tick(void);

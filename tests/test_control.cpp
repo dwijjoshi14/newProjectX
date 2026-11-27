@@ -604,3 +604,83 @@ TSIM_TEST(passivity_observer_stays_quiet_on_a_passive_spring) {
     TSIM_CHECK(largest_angle_rad > 0.02);
     TSIM_CHECK(plant.mechanical().theta_rotor_rad > -0.01);
 }
+
+namespace {
+
+/* A passive render pushed by a hand, with the far end's energy set to a fixed
+ * number for the whole run. One port: the far end is silent and the controller
+ * has nothing to do. Two port: the far end reports half a joule delivered and
+ * the controller has to damp a deficit it cannot see through its own port. */
+struct LinkEnergyRun {
+    double damping_max_nm_s_per_rad = 0.0;
+    double excess_min_j = 0.0;
+    double energy_min_j = 0.0;
+    double peak_speed_rad_s = 0.0;
+};
+
+LinkEnergyRun link_energy_run(float peer_energy_j) {
+    tsim::PlantParams params = tsim::maxon_ec_i_40_70w_params();
+    params.mechanics = tsim::mechanics_params_rigid();
+    tsim::SwitchingPlant plant(params, tsim::inverter_params_realistic());
+    plant.reset(0.0);
+    sim_hal_attach(plant);
+    sim_hal_set_board_dead_time_s(5.0e-7f);
+    sim_hal_set_imperfections(false);
+    sim_hal_latch_sample(plant.sample_electrical(), 0u);
+
+    firmware_init();
+    firmware_set_passivity_control(true);
+    firmware_set_impedance(8.0f, 0.0f);
+    firmware_set_mode(FIRMWARE_MODE_IMPEDANCE);
+    firmware_set_position_reference_rad(0.0f);
+
+    LinkEnergyRun run;
+    for (std::uint64_t tick = 0; tick < 2000u; ++tick) {
+        firmware_set_link_energy_j(peer_energy_j);
+        plant.set_external_torque_nm((tick >= 200u && tick < 600u) ? 0.02 : 0.0);
+        sim_run_window(plant, tick);
+        const firmware_status_t *status = firmware_status();
+        run.damping_max_nm_s_per_rad =
+            std::max(run.damping_max_nm_s_per_rad,
+                     static_cast<double>(status->passivity_damping_nm_s_per_rad));
+        run.excess_min_j =
+            std::min(run.excess_min_j, static_cast<double>(status->passivity_excess_j));
+        run.energy_min_j =
+            std::min(run.energy_min_j, static_cast<double>(status->passivity_energy_j));
+        run.peak_speed_rad_s =
+            std::max(run.peak_speed_rad_s, std::fabs(plant.mechanical().omega_rotor_rad_s));
+    }
+    return run;
+}
+
+} // namespace
+
+TSIM_TEST(passivity_controller_uses_the_energy_the_other_end_reports) {
+    /* This is the day 6 claim in one test. The same plant, the same push, the
+     * same controller: the only difference is whether the drive is told what the
+     * far port did. A one port observer has nothing to damp here, because this
+     * render is passive on its own; a two port one damps, because the pair is
+     * not. */
+    const LinkEnergyRun alone = link_energy_run(0.0f);
+    const LinkEnergyRun pair = link_energy_run(0.5f);
+
+    TSIM_CHECK(alone.peak_speed_rad_s > 0.1);
+    /* One port: the excess stays at the arithmetic floor and the controller
+     * adds nothing. The spring is passive and the push is a push. */
+    TSIM_CHECK(alone.excess_min_j > -0.05);
+    TSIM_CHECK(alone.damping_max_nm_s_per_rad < 0.5);
+    /* Two port: half a joule reported is half a joule damped out of the pair,
+     * and the damping is bounded by the stall torque rather than by the
+     * arithmetic. */
+    TSIM_CHECK(pair.excess_min_j < alone.excess_min_j - 0.4);
+    TSIM_CHECK(pair.damping_max_nm_s_per_rad > 1.0);
+    /* The correction is a torque against the motion, so it does negative work on
+     * the joint and the port that applied it ends up having absorbed more. That
+     * is the energy leaving the pair, and it is the only statement this test
+     * makes about the motion. What is deliberately not asserted is that the joint
+     * moves less: measured, the two port run peaks higher than the one port run,
+     * because the damping is the deficit divided by the speed squared and at low
+     * speed that is a kick. docs/results.md reports the trade. */
+    TSIM_CHECK(pair.energy_min_j < alone.energy_min_j);
+    TSIM_CHECK(alone.peak_speed_rad_s > 0.1);
+}
