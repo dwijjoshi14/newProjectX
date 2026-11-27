@@ -4,6 +4,12 @@ add_library(tsim_sim_hal STATIC src/sim_hal.cpp src/sim_loop.cpp src/link.cpp)
 target_include_directories(tsim_sim_hal PUBLIC include)
 target_link_libraries(tsim_sim_hal PUBLIC tsim_firmware PRIVATE tsim_sim tsim_warnings)
 
+# The packet two joints send each other, as bytes. Portable, so the codec tests
+# run everywhere the control tests do.
+add_library(tsim_tandem_wire STATIC src/tandem_wire.cpp)
+target_include_directories(tsim_tandem_wire PUBLIC include)
+target_link_libraries(tsim_tandem_wire PRIVATE tsim_warnings)
+
 add_executable(tsim_harness src/main.cpp)
 target_link_libraries(tsim_harness PRIVATE tsim_sim_hal tsim_sim tsim_firmware tsim_warnings)
 
@@ -26,3 +32,16 @@ target_link_libraries(tsim_efficiency PRIVATE tsim_sim_hal tsim_sim tsim_firmwar
 # be soaked through a 1 MHz plant inside one session.
 add_executable(tsim_thermal src/thermal_tool.cpp)
 target_link_libraries(tsim_thermal PRIVATE tsim_sim tsim_warnings)
+
+# Two drives, two processes, one real socket between them. POSIX only, because a
+# datagram socket on this project means BSD sockets and both the runner and the
+# sandbox are Linux.
+if(UNIX)
+  add_library(tsim_tandem_link STATIC src/udp_link.cpp)
+  target_include_directories(tsim_tandem_link PUBLIC include)
+  target_link_libraries(tsim_tandem_link PUBLIC tsim_tandem_wire PRIVATE tsim_warnings)
+
+  add_executable(tsim_tandem_node src/tandem_node.cpp)
+  target_link_libraries(
+    tsim_tandem_node PRIVATE tsim_tandem_link tsim_sim_hal tsim_sim tsim_firmware tsim_warnings)
+endif()

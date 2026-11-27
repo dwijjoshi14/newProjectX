@@ -27,8 +27,13 @@ namespace tsim {
 struct LinkSample {
     double position_rad = 0.0;   /* joint angle, rad */
     double velocity_rad_s = 0.0; /* joint speed, rad/s */
-    std::uint64_t sequence = 0;  /* push order, count */
-    bool valid = false;          /* false means nothing has arrived */
+    /* Day 6. The sender's accumulated port energy, J, carried with the sample
+     * so that a two port observer reads the energy that belongs to the angle it
+     * is rendering against, not the newest number to arrive. Left at zero by
+     * every day 5 caller, which is why day 5 is a one port result. */
+    double energy_j = 0.0;
+    std::uint64_t sequence = 0; /* push order, count */
+    bool valid = false;         /* false means nothing has arrived */
 };
 
 struct LinkConfig {

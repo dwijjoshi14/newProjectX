@@ -7,9 +7,20 @@ add_executable(tsim_firmware_tests test_main.cpp test_firmware.cpp test_foc.cpp)
 target_link_libraries(tsim_firmware_tests PRIVATE tsim_firmware tsim_hal_stub tsim_warnings)
 add_test(NAME firmware COMMAND tsim_firmware_tests)
 
-add_executable(tsim_control_tests test_main.cpp test_control.cpp test_sensing.cpp test_link.cpp)
-target_link_libraries(tsim_control_tests PRIVATE tsim_sim_hal tsim_sim tsim_firmware tsim_warnings)
+add_executable(tsim_control_tests test_main.cpp test_control.cpp test_sensing.cpp test_link.cpp
+                             test_wire.cpp)
+target_link_libraries(tsim_control_tests PRIVATE tsim_sim_hal tsim_tandem_wire tsim_sim tsim_firmware
+                                         tsim_warnings)
 add_test(NAME control COMMAND tsim_control_tests)
+
+# A real datagram socket, in one process, on loopback. The two process version
+# is the day 6 study and not a test: a test that spawns nodes and reads a clock
+# fails when the runner is busy, which is a property of the runner.
+if(UNIX)
+  add_executable(tsim_socket_tests test_main.cpp test_socket.cpp)
+  target_link_libraries(tsim_socket_tests PRIVATE tsim_tandem_link tsim_warnings)
+  add_test(NAME socket COMMAND tsim_socket_tests)
+endif()
 
 add_test(
   NAME deterministic_repeat
