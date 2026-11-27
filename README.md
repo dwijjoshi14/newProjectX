@@ -4,15 +4,30 @@ A switching level digital twin of a haptic robot joint, with field oriented
 control firmware running inside it unmodified. No hardware, no cloud, one
 machine.
 
-**Status: day 5 of 7. One motor drives a two mass joint through a steel shaft
-with backlash, with a hand and a wall on the far side, in position and in
-impedance, and now with a winding that heats and a second joint over a link that
-arrives late.** The firmware is the same unmodified FOC code, with a position
-cascade, a 20 kHz impedance mode, a derating curve driven by the winding
-temperature and a passivity observer in impedance mode. The first joint is the
-real plant and the real firmware; the far joint is the same mechanics with no
-drive of its own, which is the day's largest cut. Every number in this
-repository is simulated, and the figures say so on their face.
+**Status: day 6 of 7. Two drives, two processes and one real socket.** Each side
+is its own program: the same unmodified FOC firmware, its own plant, its own
+encoder noise, its own bridge, talking to the other over UDP on loopback in 40
+byte packets once per control window. The firmware is unchanged from day 5 apart
+from a setter that hands it the far end's port energy, which is what makes a two
+port passivity observer possible on a drive. The two processes are locked step
+window by window instead of running on two clocks, which is the day's largest cut
+and is written down. Every number in this repository is simulated, and the
+figures say so on their face.
+
+![Two drives over one socket, simulated](docs/figures/day6_pair.png)
+
+Two joints over a link do not fail the way one joint does. One joint rings up
+until the current limit holds it; a pair separates, because each drive renders a
+spring to an angle a few milliseconds old and both of them rail against the hands
+they are bolted to. At 8 ms and 40 N m/rad the two joints end 0.696 rad apart from
+a 2 mrad release, three hundred and fifty times the disturbance that started it.
+A passivity controller on both ends takes that to 0.11 rad, a factor of six, and
+changes nothing above 70 N m/rad where the motor rather than the link sets the
+gap. The two port observer the day was built for is within a few percent of the
+one port controller everywhere and worse by up to 17 percent at the longest delay,
+which is this day's honest negative and it is explained in the results: a
+symmetric pair has almost no energy that crosses one port without crossing the
+other, so there is nothing for the extra instrument to see.
 
 ![Winding temperature, simulated](docs/figures/day5_thermal.png)
 
@@ -22,9 +37,7 @@ insulation limit in 7.4 s, while the housing is still at 56 degC. The firmware
 derates its own stall envelope from 100 degC down to a 130 degC trip, and a 24 s
 run of the closed loop asked for 20 A and settled at 126 degC and 8.2 A without
 latching a fault, because a proportional derating finds its own equilibrium
-below the trip. Two joints over a 2 ms link at 70 N m/rad make the render
-generate 19.7 W, and the one port passivity controller takes that to 2.7 W while
-not moving the stability boundary at all.
+below the trip.
 
 ![Position loop frequency response, simulated](docs/figures/day4_position_bode.png)
 

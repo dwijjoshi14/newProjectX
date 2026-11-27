@@ -407,3 +407,72 @@ at 2 ms and 70 N m/rad. Cut or deferred, in the order they matter:
   Clarke, Park with `iq = -i_alpha sin + i_beta cos`, torque
   `T = 1.5 p lambda iq`, back EMF `e_a = -E sin(theta_e)` with
   `E = p lambda omega_m`. The energy balance test is what will catch a mistake.
+
+## Day 6 decisions
+
+- **Two drives are two processes over a real socket.** `hal.h` is one MCU: one
+  encoder, one set of phase currents, one bridge. A second drive therefore cannot
+  be a second `firmware_init` in the same program without changing the header the
+  firmware is compiled against, which is the one thing this project will not do.
+  So the second drive is a second program and the link is a UDP socket on
+  loopback. That is the whole reason this day exists in this shape.
+- **The wire is a 40 byte format, not a struct.** Fields are written little
+  endian, one at a time, in a stated order. A struct on a socket is a struct only
+  for as long as both compilers agree about padding, and the day one of them does
+  not, the receiver reads a float out of a hole.
+- **The delay is imposed at the receiver, and the transport's latency is
+  measured.** A loopback datagram takes tens of microseconds and cannot be made
+  to take two milliseconds. The sender names a release window and the receiver
+  holds the packet, so the delay is a number the study sets; the real latency is
+  measured on every packet and reported beside it. Saying "2 ms link" without
+  both numbers would be a simulation wearing a socket.
+- **The two processes are locked step, window by window.** This was chosen after
+  measuring the alternative, not before. A wall clocked pair drifted 14.5 ms
+  apart, which makes a 2 ms link a 15 ms one, and a first order steering loop on
+  the packet timestamps moved the oscillation rather than removing it. A 1 MHz
+  switching plant costs about 67 us per 50 us window on this machine, so true real
+  time is not available here at all. At the top of window k each node sends, then
+  waits for the peer to reach window k. The measured skew is one window.
+- **Both ends render the same symmetric impedance.** Each side renders
+  `k (peer angle - own angle) - b own speed`, which is a spring between the two.
+  It is the same render the firmware already had, so this day adds a drive and not
+  a control law.
+- **Two port passivity is the far end's accumulator added to this one.** The peer
+  sends its accumulated port energy over the same link, `firmware_set_link_energy_j`
+  hands it to the observer, and the excess becomes `-(mine + peer + stored)`. It
+  is 2002 Hannaford and Ryu applied where a drive can actually apply it, with the
+  far number arriving one link delay late like every other number in this system.
+- **The angle gap is the stability column, not a limit cycle amplitude.** A pair
+  fails by failing to close the gap between the two joints, and a speed ratio
+  misses that because a slow pull apart has small speeds in both windows. The
+  generated power is still reported, because it is what the controller acts on and
+  what day 5 published.
+
+## Day 6 status and what was cut
+
+Two joints, two processes, one socket, 40 byte packets, a measured transport, a
+two port observer, and a grid of thirty five points per controller. The numbers
+worth carrying forward: the one port controller takes 24.3 W of generated power at
+1 ms and 320 N m/rad to nothing measurable, and the two port controller is within
+a few percent of it everywhere and worse by up to 17 percent at 8 ms. Cut or
+deferred, in the order they matter:
+
+- The lockstep. The largest cut by a distance. Each window waits for the peer's
+  window, so the pair is a cosimulation with a real transport and not two
+  independent clocks. Two crystals drifting apart is the thing this day set out to
+  have and could not afford.
+- The two port result is negative on this pair. The instrument works and the
+  symmetric pair is the wrong test case for it: with identical drives at both ends
+  almost no energy crosses one port without crossing the other. A wall on one side
+  and a free handle on the other is the case it is for, and it is not here.
+- No stability proof, only a measurement. No energy tank, no wave variables, no
+  time domain passivity control with a window, no prediction or interpolation of
+  the delayed sample.
+- The link is one hop on loopback with an imposed delay. No packetisation, no
+  burst loss, no reordering, no timeouts, no clock drift, no bandwidth limit.
+- Both ends are one motor, one encoder and one set of tolerances, used twice.
+- The gap at stiff couplings is set by the motor and not by the link, which means
+  the grid above 70 N m/rad is measuring the drive's current limit in both modes.
+  A stronger motor would move those rows and the study cannot say where.
+- Nothing has been compared with hardware, so the transport numbers are about this
+  machine and the pairwise behaviour is about this model.

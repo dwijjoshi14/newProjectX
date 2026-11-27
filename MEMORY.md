@@ -129,3 +129,40 @@ Durable decisions and corrections. Newest last.
   delayed link. At 8 ms and 20 N m/rad the 250 N m/rad shaft generates 70.6 W
   where a rigid one generates 0.3 mW, and at 0.5 ms the rigid one is the better
   of the two. Reported, not explained: a two port analysis is day 6.
+
+## 2026-11-27, day 6
+
+- 2026-11-27 two drives are two processes and one socket, because hal.h is one
+  MCU. The wire is 40 bytes written field by field, the delay is imposed by the
+  receiver from a release window the sender names, and the transport's own
+  latency is measured on every packet: 63 to 115 us mean across runs, 130 us at
+  the 99th percentile. The flattering direction is stated with it.
+- 2026-11-27 true real time is not available here: 67 us of plant per 50 us
+  window on two cores. A wall clocked pair drifted 14.5 ms apart and turned a 2 ms
+  link into a 15 ms one. The nodes now lock step window by window, skew one
+  window, and the lockstep is the day's largest cut. It also made the runs
+  reproducible to six figures, which nothing paced was.
+- 2026-11-27 a bilateral pair fails by separating, not by ringing. Each drive
+  renders to an angle a few milliseconds old and both rail their current against
+  their hands, so the two joints end further apart than the release that started
+  them. At 8 ms and 40 N m/rad the gap is 0.696 rad from a 2 mrad release; the
+  controllers in this repository get it to 0.11.
+- 2026-11-27 a passivity controller helps exactly where the link is the problem
+  and not where the motor is. At 8 ms and 320 N m/rad the gap moves from 0.842 to
+  0.830, one and a half percent, because the drive has already railed. Above
+  70 N m/rad the whole grid is measuring the current limit.
+- 2026-11-27 two port passivity is built, tested and worth almost nothing on this
+  pair: within a few percent of one port everywhere, 17 percent worse at 8 ms and
+  320 N m/rad, better in none. A symmetric pair has almost no energy crossing one
+  port without crossing the other, so the far end's number adds nothing. The
+  instrument is right and the test case is wrong. A wall on one side is the case
+  it needs and it is not in the seven days.
+- 2026-11-27 one port control is close to a cure at short delays: at 1 ms and
+  320 N m/rad it takes 24.3 W of generated power to nothing measurable, and the
+  port never delivers net energy over the whole run. At 8 ms it is 6.6 percent
+  worse than no controller, which is day 5 repeating itself one level down.
+- 2026-11-27 four sign and bookkeeping errors in one day of clock work: the steer
+  had its sign inverted, the overrun counter re-measured a deficit it had already
+  absorbed, the sleep returns 80 us late on this kernel, and the two port table
+  compared two ports against one. The last one read as exactly twice, which is
+  what gave it away.

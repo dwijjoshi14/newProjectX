@@ -339,6 +339,73 @@ bits became `(1u << Nu)` in `hal.h` and the ambient sweep became an integer
 index. Worth noting that the local clang-tidy is stricter than the one CI ran on
 day 4, so a green run there is not evidence about the code.
 
+## 2026-11-27, day 6
+
+**Entry 41, the two nodes ran away from each other by 14.5 ms.**
+The first free running pair let each process go as fast as it could. One finished
+its half second of simulated time in 0.64 s, the other in 0.85, and the faster one
+was 291 windows ahead by the end. The receiver holds a packet until the release
+window the sender named, so a sender 291 windows ahead produces packets that are
+already overdue on arrival: the fast side saw a 15 ms link and the slow side saw a
+0.3 ms one. The first fix was to pace both to a wall clock, which is entry 42.
+
+**Entry 42, the overrun counter reported three seconds of overrun in a half second
+run.** The counter added the shortfall at every pacing check without moving the
+deadline, so one thirty millisecond stall was re-measured at every check for the
+rest of the run. The fix moved the origin forward by the deficit. That fix caused
+entry 43, so the counter now reports the shortfall and leaves the deadline alone.
+The count is a lateness budget per check, and it is reported per run.
+
+**Entry 43, the clock steer drove the two timelines apart.** With the origin
+moving, the two nodes absorbed their own sleep overshoot and random walked apart.
+A first order steer on the packet timestamps was added and its sign was inverted:
+a positive skew means the peer is ahead, so this node has to advance sooner and
+the origin has to go down, and it went up. Measured: 8799 windows of skew and
+24770 windows of overrun. The sign flip is one character and the measurement is
+the only thing that caught it.
+
+**Entry 44, a node with 580 us of slack per block still overshot every block.**
+The pacing block is ten windows, which is 1250 us of wall time at a stretch of
+2.5, and the plant costs 670 us of it. A solo node reported 1577 windows of
+overrun anyway. A sleep on this kernel returns about 80 us late, every time, so
+the node was 80 us late on every block. It now sleeps to 150 us short of the
+deadline and spins the rest.
+
+**Entry 45, true real time is not available on this machine, so the pair is
+locked step.** A 1 MHz switching plant with seven pole pairs costs 67 us of CPU
+per 50 us control window. With two nodes, two cores and a launcher, a paced pair
+cannot hold 20 kHz, and every attempt to paper over that produced a number about
+the scheduler. The node now sends at the top of window k and waits until the peer
+has reached window k, which bounds the skew at one window and reads no clock for
+scheduling. The cost is that the two clocks are one clock, and that is the day's
+largest cut. Locking the windows also made the runs reproducible: two runs of the
+same point agreed to six figures, which nothing paced did.
+
+**Entry 46, the two port controller looked twice as bad as it was.** The study
+tabulated `-min(passivity_excess_j)`, and in two port mode that excess already
+contains the far end's accumulator, so the two port column was a pair measured
+against two ports measured as one. At 4 and 8 ms it read almost exactly twice the
+one port value, which is what gave it away. The table now uses each port's own
+peak delivery, which is the same quantity in all three modes.
+
+**Entry 47, the two port test asserted that the joint moves less, twice, with the
+wrong sign each time.** The first assertion was that the controlled pair peaks at
+a lower speed. It does not: the correction is the deficit over the speed squared
+and at low speed that is a kick, so the controlled run peaked higher while
+generating less. The assertion was changed to the port's energy and the sign was
+still wrong, because the correction opposes the motion and therefore lowers the
+accumulator rather than raising it. A test written from the expected story rather
+than from the sign of a term is a test that fails twice.
+
+**Entry 48, the packet was declared 44 bytes and laid out as 40.** Four uint32
+worth of header plus four floats is 40; the constant said 44 and the codec wrote
+40, so the cast in the socket call read four bytes of stack. The round trip test
+asserts the size literally and caught it at the first build.
+
+**Entry 49, a closed socket reported port zero.** The node printed its port for
+the run summary after closing the socket, and `close` resets the port to zero, so
+every summary said port 0. Saved in a local before the close.
+
 ## Template for later entries
 
 ```

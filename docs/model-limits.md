@@ -145,13 +145,34 @@ is a longer list of things that a switching model still does not say.
 
 ## What the delayed link does not have
 
-- One constant delay per direction with jitter and independent per sample loss.
-  A real link has packetisation, bursts of loss, reordering, and two clocks that
-  drift apart.
-- No protocol. No sequence numbers, no acknowledgement, no interpolation of
-  late samples, no timeout behaviour, and the far side never asks for anything.
-- The far joint has mechanics and no drive, so the pair cannot disagree about
-  an encoder, and a real pair would.
+Two links exist in this repository and both are limited in the same ways.
+
+- One constant delay per direction. The day 5 link adds jitter and independent
+  per sample loss; the day 6 link is a real socket that adds its own queueing and
+  drops, with the delay imposed by the receiver. Neither has packetisation,
+  bursts of loss, reordering, or a bandwidth limit.
+- No protocol. A day 5 sample is a struct in a delay line and a day 6 sample is a
+  40 byte packet with a sequence number and a release window, which is enough to
+  order it and not enough to negotiate anything: no acknowledgement, no
+  retransmission, no interpolation of late samples, no timeout behaviour beyond
+  dying loudly, and no clock drift because the two processes are locked step.
+- On day 5 the far joint has mechanics and no drive, so the pair cannot disagree
+  about an encoder. On day 6 the far joint does have a drive, and the two of them
+  share one motor's parameters, one encoder noise figure and one set of
+  tolerances, so the model still cannot say what two real units would do to each
+  other.
+
+## What the bilateral pair does not have
+
+- A stability theorem. The two port observer is built, tested for its signs, and
+  measured; nothing here proves that a given controller stabilises a given delay.
+- An energy tank, wave variables, or a time domain passivity control with a
+  window. The correction is the instantaneous deficit over the squared speed,
+  which is a kick at low speed and is visible in the results as one.
+- Asymmetry. Both ends render the same impedance, with the same hand on each.
+  A tool against a wall and a handle in a hand is the pair this is not.
+- Prediction or interpolation of the delayed sample. The far angle used is the
+  far angle as it arrived, delayed by exactly the imposed delay.
 
 Each of these is listed again in `docs/validation-plan.md` with the instrument
 that would measure it and the order in which it should be checked on hardware.

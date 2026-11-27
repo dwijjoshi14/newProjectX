@@ -4,12 +4,168 @@ A spec sheet of simulated numbers, each with its method and the commit that
 produced it. No measured number appears in this file, because nothing has been
 measured. Every row can be regenerated from the commit beside it.
 
-Status: day 5 of 7. One motor driving a two mass joint through a steel shaft
-with backlash, with a hand and a wall on the far side, in position and in
-impedance, now with a winding that heats and a second joint over a link that
-arrives late and sometimes does not arrive. The firmware derates its own stall
-envelope with temperature, latches a fault above 130 degC, and runs a passivity
-observer in impedance mode.
+Status: day 6 of 7. Two motors, two processes and one real socket, each side
+running the same unmodified firmware, with a hand on each end of a rendered
+coupling and a link whose delay and latency are reported separately. The firmware
+derates its own stall envelope with temperature, latches a fault above 130 degC,
+and runs a passivity observer that can be one port or two.
+
+## Day 6 results
+
+Two drives, two processes, one socket, and the two port observer that day 5 said
+was not in the week.
+
+![Two drives over one socket, simulated](figures/day6_pair.png)
+
+### What is actually two now
+
+Each side is its own process: a switching plant at 1 MHz, the same unmodified
+firmware, its own encoder with its own noise, its own bridge, and a UDP socket on
+loopback carrying a 40 byte packet per control window. Neither binary contains a
+second `firmware_init`; `hal.h` is still a single MCU contract and each program is
+one MCU. The packet carries position, speed, rendered torque and port energy in a
+fixed little endian layout, so the wire is a format and not a struct.
+
+The delay is imposed by the sender naming a release window and the receiver
+holding the packet until that window is due, because a loopback datagram takes
+tens of microseconds and no amount of code makes it take two milliseconds. The
+transport underneath is real and is measured on every packet:
+
+| Quantity | Value |
+|---|---|
+| packet | 40 bytes, one per window per side |
+| one way latency, mean | 63 to 115 us across runs |
+| one way latency, 99th percentile | 130 us |
+| worst latency | 131 us |
+| packets in a 0.3 s run | 2400 per side |
+| peer timeouts across the whole grid | 0 to 8 per run |
+| skew between the two window counters | 1 window |
+
+![Loopback latency, measured](figures/day6_latency.png)
+
+Two things about this link are not a network. It is a loopback, so the transport
+costs one to two and a half control windows where a real network would cost more,
+which is the flattering direction. And the two processes are locked step, window
+by window. A 1 MHz switching plant with seven pole pairs costs about 67 us of this
+machine's time per 50 us control window and the machine has two cores for two
+nodes plus the launcher, so a pair at true real time is not available here. Pacing
+both nodes to a wall clock was built first and measured: the two timelines
+separated by up to 14.5 ms and turned a 2 ms link into a 15 ms one, and a steering
+loop on the packet timestamps moved the oscillation around without removing it.
+Instead, at the top of window k each node sends its state and then waits until the
+peer has also reached window k. Neither can be more than a window ahead, no clock
+is read for scheduling, and the delay is exactly the number the study sets. The
+lockstep is the day's largest cut and it is written down in `docs/spec.md`.
+
+Reproducibility, which is claimed for nothing else in this file: two runs of the
+same point (8 ms, 220 N m/rad, two port control) produced 10.9970 W and 13.8542 W
+at the two ports and growth 0.5143 and 0.5106, identical to four and six figures.
+Locking the windows makes the packet stream a function of the run and not of the
+scheduler. The transport latency is not reproducible and is reported as a
+distribution.
+
+### How a pair fails, which is not how a joint fails
+
+The single joint in day 5 rang up until the current limit held it. The pair here
+separates: each drive renders a spring to a peer angle a few milliseconds old,
+both drives rail their current against the hands they are bolted to, and the two
+joints end further apart than the release that started them. The angle gap is the
+column that shows this and a speed ratio does not, because a slow pull apart has
+small speeds in both windows.
+
+![Peak gap across the grid, simulated](figures/day6_gap.png)
+
+Peak gap over the run, rad, controller off, 0.3 s of release and ring down:
+
+| Coupling | 0.5 ms | 1 ms | 2 ms | 4 ms | 8 ms |
+|---|---|---|---|---|---|
+| 20 N m/rad | 0.0020 | 0.0020 | 0.0021 | 0.2433 | 0.4695 |
+| 40 | 0.0020 | 0.0021 | 0.2287 | 0.4465 | 0.6960 |
+| 70 | 0.0409 | 0.1477 | 0.3095 | 0.5202 | 0.7667 |
+| 100 | 0.0772 | 0.2031 | 0.3517 | 0.5545 | 0.7957 |
+| 150 | 0.1499 | 0.2467 | 0.3835 | 0.5807 | 0.8190 |
+| 220 | 0.1875 | 0.2710 | 0.4024 | 0.5970 | 0.8324 |
+| 320 | 0.2069 | 0.2876 | 0.4155 | 0.6083 | 0.8424 |
+
+Two rows of that table are worth reading twice. Below 40 N m/rad at half a
+millisecond the gap is 0.002 rad, which is the release itself: the pair closes it
+and stops. At 8 ms and 40 N m/rad it is 0.696 rad, three hundred and fifty times
+the release, and no controller gets it under 0.11.
+
+The same table with controllers, at the two delays where they matter:
+
+| Coupling | 4 ms off | 4 ms one port | 4 ms two port | 8 ms off | 8 ms one port | 8 ms two port |
+|---|---|---|---|---|---|---|
+| 20 N m/rad | 0.2433 | 0.0662 | 0.0911 | 0.4695 | 0.1150 | 0.1167 |
+| 40 | 0.4465 | 0.1002 | 0.1095 | 0.6960 | 0.1109 | 0.1378 |
+| 70 | 0.5202 | 0.4157 | 0.4189 | 0.7667 | 0.6921 | 0.6915 |
+| 150 | 0.5807 | 0.5430 | 0.5425 | 0.8190 | 0.7891 | 0.7875 |
+| 320 | 0.6083 | 0.5921 | 0.5913 | 0.8424 | 0.8297 | 0.8288 |
+
+So a passivity controller on both ends takes a factor of four to six out of the
+gap where the link is the problem, and changes nothing above 70 N m/rad where the
+motor is the problem: at 8 ms and 320 N m/rad it moves the gap from 0.842 to
+0.830, one and a half percent, because the drive has already railed and the gap is
+set by what the motor can hold against the hands. That is the honest half of the
+day: a controller bounds the energy a render returns, and it does not make a 0.34
+N m joint hold a 320 N m/rad spring.
+
+### What the two port observer bought, which is almost nothing
+
+Generated power over the run, both ports measured at their own accumulators, so
+the three columns are the same quantity:
+
+| Coupling | 1 ms off | 1 ms one port | 1 ms two port | 8 ms off | 8 ms one port | 8 ms two port |
+|---|---|---|---|---|---|---|
+| 20 N m/rad | 0.000 | 0.000 | 0.000 | 27.9 | 0.000 | 0.084 |
+| 40 | 0.000 | 0.000 | 0.000 | 513.9 | 0.000 | 0.240 |
+| 70 | 0.001 | 0.000 | 0.000 | 1447.2 | 826.2 | 893.0 |
+| 100 | 0.036 | 0.000 | 0.000 | 2522.8 | 1822.8 | 1917.9 |
+| 220 | 3.494 | 0.000 | 0.000 | 5686.6 | 4922.6 | 4732.5 |
+| 320 | 24.291 | 0.000 | 0.261 | 7447.8 | 7941.6 | 8730.5 |
+
+The one port controller is close to a cure at short delays. At half a millisecond
+it takes generation from 2.37 W at 320 N m/rad to 0.079, and at 1 ms from 24.3 W
+to nothing measurable: the port never delivers net energy over the whole run. At
+2 ms it is 116 W down to 1.57 at 70 N m/rad and 405 to 185 at 150. At 8 ms it is
+within 7 percent of no controller and at 320 it is 6.6 percent worse, which is the
+day 5 result repeating itself one level down.
+
+The two port controller is within a few percent of the one port in all thirty five
+points, worse by up to 17 percent (8 ms and 320 N m/rad, 8730 W against 7942), and
+better in none of them by more than the scatter. The instrument is built, the
+signs are tested, and this pair is not the case it is for. This pair is symmetric:
+two identical drives, two identical hands, two identical renders, and the release
+is a differential mode. When one end generates the other is generating too, so
+almost no energy crosses one port without crossing the other, and the local
+excess already contains what a two port observer would add. The case that needs
+it is a pair where one end is stiff against a wall while the other is free, which
+is a wall contact on one side and it is not in the seven days.
+
+The first version of this table said the two port controller was twice as bad as
+the others. It was not: the two port excess already contains the far end's
+accumulator, so the pair column was measuring two ports against one. The three
+columns above are each port's own peak delivery and the mistake is in the bring up
+log.
+
+### What was cut, and the largest one
+
+- **The two processes are locked step, not real time.** The largest cut. Each
+  window waits for the peer's window, so the pair runs at the speed of the slower
+  program and no clock is read for scheduling. A real pair of MCUs would each keep
+  their own crystal and drift, and the day cannot say what that costs.
+- No two port stability theorem is proved, only a controller built and measured.
+  No energy tank with a refill path, no wave variable transformation, no
+  position-position or position-force architecture beyond the symmetric one.
+- The link is one hop on loopback: no packetisation, no bursts, no reordering, no
+  timeouts, no interpolation of late samples, and no clock drift because of the
+  lockstep.
+- Both ends are identical. A real pair has two motors, two encoders and two sets
+  of tolerances, and this one has one motor twice.
+- Both ends have the same rendered impedance. A tool and a handle are different
+  problems and only one of them is modelled.
+- Nothing here has been compared with hardware. The socket latency is measured on
+  this machine and says nothing about a real network.
 
 ## Day 5 results
 
@@ -596,3 +752,23 @@ python3 tools/plot_day2.py --commit a781608
 
 The harness writes `data/run_latest/`, which is ignored by git, and a figure
 stamp is the commit that contains the code that produced it.
+
+### Day 6 reproduction
+
+```sh
+cmake --preset dev
+cmake --build --preset dev -j
+
+# the grid: five delays, seven couplings, three controllers, two processes each
+python3 tools/run_day6.py
+
+# the two traces the pair figure uses, both sides written by one pair
+python3 tools/run_day6.py --trace
+
+python3 tools/plot_day6.py --commit "$(git rev-parse --short HEAD)"
+```
+
+The launcher needs `build/dev/harness/tsim_tandem_node` and takes about ninety
+five seconds for the grid on two cores. It writes `data/run_latest/day6_pair.csv`
+and the traces, all ignored by git. Each point is two processes, so a run is two
+`SUMMARY` lines from two programs and the table is built from both of them.
